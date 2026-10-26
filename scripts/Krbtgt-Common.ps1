@@ -1,9 +1,49 @@
-# Shared functions for Reset-KrbtgtPassword.ps1 and tests\Test-KrbtgtReset.ps1.
-# Written for PowerShell 7; also runs in Windows PowerShell 5.1. ASCII-only. Dot-source it; it changes nothing by itself.
-#
-# Everything that decides something (STIG status, which reset comes next, the minimum wait, the Kerberos policy values,
-# the state file) lives here as a pure function with no Active Directory access, so the tests can prove every branch
-# without a domain. The functions that talk to Active Directory are at the end and are thin wrappers.
+<#
+.SYNOPSIS
+    Shared functions for Reset-KrbtgtPassword.ps1 and tests\Test-KrbtgtReset.ps1: the DISA STIG items, the STIG
+    status rule, Kerberos policy parsing, the minimum wait, password generation, the state file and the next-step
+    decision. Dot-source it; it changes nothing by itself.
+
+.DESCRIPTION
+    Everything that decides something (STIG status, which reset comes next, the minimum wait, the Kerberos policy
+    values, the state file) lives here as a pure function with no Active Directory access, so the tests can prove
+    every branch without a domain. The functions that talk to Active Directory are at the end and are thin wrappers
+    around the ActiveDirectory module.
+
+    Functions:
+      Get-KrbtgtStigItem            STIG item (Vuln ID, STIG ID, Rule ID, benchmark) for a DC's operating system
+      Get-KrbtgtStigAnchor          the requested item, V-254427 / WN22-DC-000430 (Windows Server 2022)
+      Get-KrbtgtStigStatus          Open / NotAFinding from PasswordLastSet and the 180-day limit
+      ConvertFrom-KerberosPolicyInf [Kerberos Policy] values from a security template (untrusted text)
+      Get-KrbtgtMinimumWaitHours    the longest ticket lifetime in the policy = minimum wait between the resets
+      Get-KrbtgtRandomIndex         unbiased random index from a cryptographic RNG
+      New-KrbtgtPassword            64 random characters as a read-only SecureString, never a string
+      Read-KrbtgtState              the state file, validated field by field, or $null
+      Write-KrbtgtState             the state file, UTF-8 without BOM
+      Get-KrbtgtNextStep            reset 1 of 2 or 2 of 2, too soon or not, with the reason in words
+      Get-KrbtgtOriginatingDc       DC name from an NTDS Settings distinguished name
+      Get-KrbtgtSafeName            a domain name as a safe folder name
+      Get-KrbtgtPasswordMetadata    (AD) unicodePwd replication version, time and originating DC on one DC
+      Get-KrbtgtKerberosPolicy      (AD/SYSVOL) the Kerberos policy from the Default Domain Policy template
+
+.EXAMPLE
+    . "$PSScriptRoot\Krbtgt-Common.ps1"
+    Get-KrbtgtStigStatus -PasswordLastSet (Get-ADUser krbtgt -Properties PasswordLastSet).PasswordLastSet
+    Returns AgeDays, MaxAgeDays, Status (Open / NotAFinding) and DueBy.
+
+.NOTES
+    Written for PowerShell 7; also runs in Windows PowerShell 5.1. ASCII-only source.
+    STIG data taken from the XCCDF files in DISA's STIG library (dl.dod.cyber.mil); see docs\STIG-V-254427.md.
+
+    Generative AI was used in the creation and validation of this code; the result was reviewed and tested by a
+    person (121 tests in tests\Test-KrbtgtReset.ps1, both editions, plus lab runs).
+
+.LINK
+    https://github.com/dcodev1702/DC-KRBTGT-RESET
+
+.LINK
+    https://public.cyber.mil/stigs/downloads/
+#>
 
 # ---------------------------------------------------------------------------------------------------------------------
 # DISA STIG items that carry this requirement, one per Windows Server release. Taken from the XCCDF files in DISA's
@@ -19,20 +59,53 @@ $script:KrbtgtStigSeverity = 'CAT II (medium)'
 $script:KrbtgtStigCci = 'CCI-000366'
 $script:KrbtgtStigTitle = 'The password for the krbtgt account on a domain must be reset at least every 180 days.'
 
-# The STIG item that applies to a domain controller, from its operatingSystem attribute. $null when no item matches.
 function Get-KrbtgtStigItem {
+    <#
+    .SYNOPSIS
+        The STIG item that applies to a domain controller, chosen from its operatingSystem attribute.
+    .DESCRIPTION
+        Matches the OS string against Windows Server 2016 / 2019 / 2022 / 2025 and returns the item (OsPattern,
+        VulnId, StigId, RuleId, Benchmark). $null when no item matches (for example Windows Server 2012 R2).
+    .PARAMETER OperatingSystem
+        The operatingSystem attribute of the DC, e.g. 'Windows Server 2025 Datacenter'.
+    .EXAMPLE
+        (Get-KrbtgtStigItem 'Windows Server 2022 Standard').VulnId    # V-254427
+    .OUTPUTS
+        PSCustomObject or $null
+    #>
     param([string]$OperatingSystem)
     foreach ($Item in $script:KrbtgtStigItems) { if ($OperatingSystem -like "*$($Item.OsPattern)*") { return $Item } }
     return $null
 }
 
-# The STIG item the user asked about (the anchor of this tool): Windows Server 2022, V-254427.
-function Get-KrbtgtStigAnchor { return ($script:KrbtgtStigItems | Where-Object { $_.VulnId -eq 'V-254427' } | Select-Object -First 1) }
+function Get-KrbtgtStigAnchor {
+    <#
+    .SYNOPSIS
+        The STIG item this tool is written for: Windows Server 2022, V-254427 / WN22-DC-000430.
+    .OUTPUTS
+        PSCustomObject (OsPattern, VulnId, StigId, RuleId, Benchmark)
+    #>
+    return ($script:KrbtgtStigItems | Where-Object { $_.VulnId -eq 'V-254427' } | Select-Object -First 1)
+}
 
-# ---------------------------------------------------------------------------------------------------------------------
-# STIG status: the check text says "If the PasswordLastSet date is more than 180 days old, this is a finding."
-# ---------------------------------------------------------------------------------------------------------------------
 function Get-KrbtgtStigStatus {
+    <#
+    .SYNOPSIS
+        STIG status of the krbtgt password age: Open when PasswordLastSet is more than MaxAgeDays old.
+    .DESCRIPTION
+        Implements the check text: "If the PasswordLastSet date is more than 180 days old, this is a finding."
+        Exactly 180 days is NotAFinding; 180.1 days is Open.
+    .PARAMETER PasswordLastSet
+        The PasswordLastSet value of the krbtgt account.
+    .PARAMETER MaxAgeDays
+        The limit; 180 in every release of the STIG.
+    .PARAMETER Now
+        The reference time (default: now). Exposed for tests.
+    .EXAMPLE
+        Get-KrbtgtStigStatus -PasswordLastSet (Get-Date).AddDays(-213)    # Status = Open, AgeDays = 213
+    .OUTPUTS
+        PSCustomObject: AgeDays, MaxAgeDays, Status ('NotAFinding' or 'Open'), DueBy
+    #>
     param(
         [Parameter(Mandatory)][datetime]$PasswordLastSet,
         [ValidateRange(1, 365)][int]$MaxAgeDays = 180,
@@ -49,13 +122,21 @@ function Get-KrbtgtStigStatus {
     }
 }
 
-# ---------------------------------------------------------------------------------------------------------------------
-# Kerberos policy. The values live in the Default Domain Policy security template (GptTmpl.inf, section
-# [Kerberos Policy]). MaxTicketAge is in hours, MaxServiceAge in minutes, MaxRenewAge in days, MaxClockSkew in minutes.
-# The text is untrusted input: only "Name = digits" lines inside that section are accepted; everything else keeps the
-# Windows default.
-# ---------------------------------------------------------------------------------------------------------------------
 function ConvertFrom-KerberosPolicyInf {
+    <#
+    .SYNOPSIS
+        Reads the [Kerberos Policy] values from the text of a security template (GptTmpl.inf).
+    .DESCRIPTION
+        MaxTicketAge is in hours, MaxServiceAge in minutes, MaxRenewAge in days, MaxClockSkew in minutes. The text is
+        untrusted input: only "Name = digits" lines inside the [Kerberos Policy] section are accepted (anchored regular
+        expressions); everything else keeps the Windows default. Found is $false when the section is absent.
+    .PARAMETER Text
+        The whole template text (Get-Content -Raw). Empty or $null gives the defaults.
+    .EXAMPLE
+        ConvertFrom-KerberosPolicyInf -Text (Get-Content -LiteralPath $Inf -Raw)
+    .OUTPUTS
+        PSCustomObject: MaxTicketAge, MaxServiceAge, MaxRenewAge, MaxClockSkew, Found
+    #>
     param([string]$Text)
     $Policy = [ordered]@{ MaxTicketAge = 10; MaxServiceAge = 600; MaxRenewAge = 7; MaxClockSkew = 5; Found = $false }
     if ($Text) {
@@ -71,10 +152,21 @@ function ConvertFrom-KerberosPolicyInf {
     return [pscustomobject]$Policy
 }
 
-# Minimum number of hours between reset 1 and reset 2: the longest ticket lifetime in the policy (Microsoft: wait at
-# least the "Maximum lifetime for user ticket" / "Maximum lifetime for service ticket", 10 hours by default). A value
-# of 0 in the policy means "no limit" for that setting; the Windows default is used for the wait and the caller warns.
 function Get-KrbtgtMinimumWaitHours {
+    <#
+    .SYNOPSIS
+        Minimum number of hours between reset 1 and reset 2: the longest ticket lifetime in the Kerberos policy.
+    .DESCRIPTION
+        Microsoft: wait at least the "Maximum lifetime for user ticket" / "Maximum lifetime for service ticket"
+        (10 hours by default). The longer of MaxTicketAge (hours) and MaxServiceAge (minutes, rounded up to hours)
+        wins. A value of 0 in the policy means "no limit" for that setting; the Windows default of 10 is used then.
+    .PARAMETER Policy
+        The object returned by ConvertFrom-KerberosPolicyInf or Get-KrbtgtKerberosPolicy.
+    .EXAMPLE
+        Get-KrbtgtMinimumWaitHours -Policy ([pscustomobject]@{ MaxTicketAge = 8; MaxServiceAge = 720 })    # 12
+    .OUTPUTS
+        System.Int32 (hours)
+    #>
     param([Parameter(Mandatory)]$Policy)
     $Ticket = [int]$Policy.MaxTicketAge
     $Service = [math]::Ceiling([int]$Policy.MaxServiceAge / 60.0)
@@ -83,13 +175,20 @@ function Get-KrbtgtMinimumWaitHours {
     return [int][math]::Max($Ticket, $Service)
 }
 
-# ---------------------------------------------------------------------------------------------------------------------
-# Password generation: 64 random characters from a cryptographic RNG, all four classes guaranteed, built directly into a
-# read-only SecureString. No plain-text string is ever created, printed or logged. (Microsoft notes that the value is
-# not significant - the KDC derives its keys from it - but a weak value would still be wrong.)
-# ---------------------------------------------------------------------------------------------------------------------
 function Get-KrbtgtRandomIndex {
-    # Unbiased index in [0, Max): rejection sampling over 32-bit values (works in both editions, no GetInt32 needed)
+    <#
+    .SYNOPSIS
+        Unbiased random index in [0, Max) from a cryptographic RNG.
+    .DESCRIPTION
+        Rejection sampling over 32-bit values, so every index is equally likely. Works in both editions (no
+        RandomNumberGenerator.GetInt32, which Windows PowerShell 5.1 lacks).
+    .PARAMETER Rng
+        A System.Security.Cryptography.RandomNumberGenerator instance.
+    .PARAMETER Max
+        Exclusive upper bound, 1 or more.
+    .OUTPUTS
+        System.Int32
+    #>
     param([Parameter(Mandatory)]$Rng, [Parameter(Mandatory)][ValidateRange(1, 2147483647)][int]$Max)
     $Bytes = New-Object byte[] 4
     $Range = [int64]4294967296
@@ -102,6 +201,24 @@ function Get-KrbtgtRandomIndex {
 }
 
 function New-KrbtgtPassword {
+    <#
+    .SYNOPSIS
+        A new random password for the krbtgt account as a read-only SecureString; no plain-text string is ever created.
+    .DESCRIPTION
+        64 characters by default from a cryptographic RNG: one character from each of the four classes (upper, lower,
+        digit, symbol; look-alike characters left out) is guaranteed, the rest come from the whole set, then a
+        Fisher-Yates shuffle. The characters are appended to a SecureString one by one and the work array is zeroed.
+        Microsoft notes that the supplied value is not significant (the KDC derives its keys), but a weak value would
+        still be wrong.
+    .PARAMETER Length
+        32 to 127 characters, default 64.
+    .EXAMPLE
+        $NewPassword = New-KrbtgtPassword
+        Set-ADAccountPassword -Identity $Dn -Reset -NewPassword $NewPassword
+        $NewPassword.Dispose()
+    .OUTPUTS
+        System.Security.SecureString (read-only)
+    #>
     param([ValidateRange(32, 127)][int]$Length = 64)
     $Classes = @(
         [char[]]'ABCDEFGHJKLMNPQRSTUVWXYZ',
@@ -133,12 +250,21 @@ function New-KrbtgtPassword {
     }
 }
 
-# ---------------------------------------------------------------------------------------------------------------------
-# State file: records the last reset this tool performed for a domain, so the next run knows whether it is reset 1 or
-# reset 2 of the pair. The file is only trusted when the unicodePwd replication version it recorded is the version AD
-# has now; a reset done outside this tool makes the file stale and the decision falls back to the time window.
-# ---------------------------------------------------------------------------------------------------------------------
 function Read-KrbtgtState {
+    <#
+    .SYNOPSIS
+        Reads and validates the state file that records the last reset this tool performed for a domain.
+    .DESCRIPTION
+        The file is JSON with Domain, Step (1 or 2), UnicodePwdVersion (integer), Time (round-trip ISO 8601) and
+        Operator. Every field is checked; a missing file returns $null silently, a malformed file returns $null with a
+        warning. The caller trusts the state only when UnicodePwdVersion equals the version AD has now.
+    .PARAMETER Path
+        Full path of krbtgt-state.json.
+    .EXAMPLE
+        $State = Read-KrbtgtState -Path (Join-Path $OutputPath 'corp.example\krbtgt-state.json')
+    .OUTPUTS
+        PSCustomObject (Domain, Step, UnicodePwdVersion, Time, Operator, Path) or $null
+    #>
     param([Parameter(Mandatory)][string]$Path)
     if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return $null }
     try { $Raw = [IO.File]::ReadAllText($Path, [Text.Encoding]::UTF8); $Obj = $Raw | ConvertFrom-Json -ErrorAction Stop }
@@ -162,6 +288,18 @@ function Read-KrbtgtState {
 }
 
 function Write-KrbtgtState {
+    <#
+    .SYNOPSIS
+        Writes the state file (UTF-8 without BOM), creating the folder when needed.
+    .PARAMETER Path
+        Full path of krbtgt-state.json.
+    .PARAMETER State
+        Hashtable with Domain, Step, UnicodePwdVersion, Time (ISO 8601 'o' format), Operator and any extra fields.
+    .EXAMPLE
+        Write-KrbtgtState -Path $StateFile -State @{ Domain = 'corp.example'; Step = 1; UnicodePwdVersion = 3; Time = (Get-Date).ToString('o'); Operator = 'CORP\admin' }
+    .OUTPUTS
+        None
+    #>
     param([Parameter(Mandatory)][string]$Path, [Parameter(Mandatory)][hashtable]$State)
     $Folder = Split-Path -Parent $Path
     if ($Folder -and -not (Test-Path -LiteralPath $Folder)) { New-Item -Path $Folder -ItemType Directory -Force -WhatIf:$false | Out-Null }
@@ -169,17 +307,40 @@ function Write-KrbtgtState {
     [IO.File]::WriteAllText($Path, $Json, (New-Object Text.UTF8Encoding($false)))
 }
 
-# ---------------------------------------------------------------------------------------------------------------------
-# Which reset is next? Pure decision from: the state file (if trusted), the password age, the minimum wait and the
-# pair window. Returns NextStep (1 or 2), whether the state was trusted, whether the pair is complete, whether a reset
-# now would be too soon, and the reason in words.
-#   - state trusted (same domain, same unicodePwd version as AD): the last step is known exactly.
-#   - otherwise: a password set within PairWindowDays is treated as reset 1 of a pair (so this run is reset 2); an
-#     older password starts a new pair. Both errors this heuristic can make end in one extra reset, never a missing one.
-#   - TooSoon: less than MinWaitHours since the last reset. Reset 2 must wait that long (tickets issued with the previous
-#     key must have expired, replication must have finished); a reset 1 that soon after another reset is just as risky.
-# ---------------------------------------------------------------------------------------------------------------------
 function Get-KrbtgtNextStep {
+    <#
+    .SYNOPSIS
+        Decides whether the next reset is 1 of 2 or 2 of 2, and whether it would be too soon.
+    .DESCRIPTION
+        Pure decision from the state file (if trusted), the password age, the minimum wait and the pair window:
+          - state trusted (same domain, same unicodePwd version as AD): the last step is known exactly; last step 1
+            means this run is reset 2 of 2, last step 2 means a new pair starts with reset 1 of 2.
+          - otherwise: a password set within PairWindowDays is treated as reset 1 of a pair (this run is reset 2); an
+            older password starts a new pair. Both errors this heuristic can make end in one extra reset, never a
+            missing one.
+          - TooSoon: fewer than MinWaitHours since the last reset (any reset, by anyone). Reset 2 must wait that long
+            so that tickets issued with the previous key have expired and replication has finished; a reset 1 that
+            soon after another reset is just as risky.
+    .PARAMETER State
+        The object from Read-KrbtgtState, or $null.
+    .PARAMETER Domain
+        DNS name of the domain (compared with the state file's Domain).
+    .PARAMETER CurrentVersion
+        The unicodePwd replication version AD has now.
+    .PARAMETER PasswordLastSet
+        The krbtgt PasswordLastSet value.
+    .PARAMETER Now
+        Reference time (default: now). Exposed for tests.
+    .PARAMETER MinWaitHours
+        Minimum hours between resets (from Get-KrbtgtMinimumWaitHours, or -MinHoursBetweenResets if higher).
+    .PARAMETER PairWindowDays
+        Days within which a previous reset counts as reset 1 of a pair when no trusted state exists.
+    .EXAMPLE
+        Get-KrbtgtNextStep -State $State -Domain 'corp.example' -CurrentVersion 3 -PasswordLastSet $K.PasswordLastSet -MinWaitHours 10 -PairWindowDays 7
+    .OUTPUTS
+        PSCustomObject: NextStep, LastStep, Trusted, PairComplete, PairInProgress, HoursSinceLastReset, TooSoon,
+        EarliestNextReset, PairWindowEnds, Reason
+    #>
     param(
         $State,
         [Parameter(Mandatory)][string]$Domain,
@@ -216,16 +377,34 @@ function Get-KrbtgtNextStep {
     }
 }
 
-# Name of the DC that originated a replicated change, from its NTDS Settings DN; '' when the DN has another shape
 function Get-KrbtgtOriginatingDc {
+    <#
+    .SYNOPSIS
+        The DC name from an NTDS Settings distinguished name (replication metadata), or '' for another shape.
+    .PARAMETER NtdsSettingsDn
+        e.g. 'CN=NTDS Settings,CN=DC01,CN=Servers,CN=Site,CN=Sites,CN=Configuration,DC=corp,DC=example'
+    .EXAMPLE
+        Get-KrbtgtOriginatingDc $Meta.LastOriginatingChangeDirectoryServerIdentity    # DC01
+    .OUTPUTS
+        System.String
+    #>
     param([string]$NtdsSettingsDn)
     $M = [regex]::Match("$NtdsSettingsDn", '^CN=NTDS Settings,CN=([^,]+),CN=Servers,', 'IgnoreCase')
     if ($M.Success) { return $M.Groups[1].Value }
     return ''
 }
 
-# A domain name as a safe folder name (the value comes from AD, but a path is built from it)
 function Get-KrbtgtSafeName {
+    <#
+    .SYNOPSIS
+        A domain name as a safe folder name (invalid file-name characters replaced; empty becomes 'domain').
+    .PARAMETER Name
+        The value, normally a DNS domain name from AD.
+    .EXAMPLE
+        Get-KrbtgtSafeName 'corp.example'    # corp.example
+    .OUTPUTS
+        System.String
+    #>
     param([string]$Name)
     $Invalid = [regex]::Escape(-join [IO.Path]::GetInvalidFileNameChars())
     $Safe = [regex]::Replace("$Name", "[$Invalid]", '_')
@@ -237,24 +416,55 @@ function Get-KrbtgtSafeName {
 # Active Directory wrappers (not unit-tested; the tests shadow the AD cmdlets with mocks instead)
 # ---------------------------------------------------------------------------------------------------------------------
 
-# Replication metadata of the krbtgt password on one DC: unicodePwd version, when and where it was last changed
 function Get-KrbtgtPasswordMetadata {
+    <#
+    .SYNOPSIS
+        Replication metadata of the krbtgt password on one DC: unicodePwd version, when and where it was last changed.
+    .DESCRIPTION
+        Calls Get-ADReplicationAttributeMetadata for unicodePwd and pwdLastSet on the given DC. The version is what
+        the script compares across DCs to prove that a reset replicated.
+    .PARAMETER Dn
+        Distinguished name of the krbtgt account.
+    .PARAMETER Server
+        The DC to ask.
+    .PARAMETER Cred
+        Splatting hashtable, empty or @{ Credential = <PSCredential> }.
+    .EXAMPLE
+        Get-KrbtgtPasswordMetadata -Dn $K.DistinguishedName -Server $Dom.PDCEmulator
+    .OUTPUTS
+        PSCustomObject: Server, Version, ChangedAt, OriginatingDc, PwdLastSetVer
+    #>
     param([Parameter(Mandatory)][string]$Dn, [Parameter(Mandatory)][string]$Server, [hashtable]$Cred = @{})
     $Meta = Get-ADReplicationAttributeMetadata -Object $Dn -Server $Server -Properties unicodePwd, pwdLastSet @Cred -ErrorAction Stop
-    $Pwd = $Meta | Where-Object { $_.AttributeName -eq 'unicodePwd' } | Select-Object -First 1
+    $PwdMeta = $Meta | Where-Object { $_.AttributeName -eq 'unicodePwd' } | Select-Object -First 1
     $Set = $Meta | Where-Object { $_.AttributeName -eq 'pwdLastSet' } | Select-Object -First 1
-    if (-not $Pwd) { throw "STOP: $Server returned no replication metadata for unicodePwd on $Dn." }
+    if (-not $PwdMeta) { throw "STOP: $Server returned no replication metadata for unicodePwd on $Dn." }
     return [pscustomobject]@{
         Server        = $Server
-        Version       = [int]$Pwd.Version
-        ChangedAt     = $Pwd.LastOriginatingChangeTime
-        OriginatingDc = Get-KrbtgtOriginatingDc $Pwd.LastOriginatingChangeDirectoryServerIdentity
+        Version       = [int]$PwdMeta.Version
+        ChangedAt     = $PwdMeta.LastOriginatingChangeTime
+        OriginatingDc = Get-KrbtgtOriginatingDc $PwdMeta.LastOriginatingChangeDirectoryServerIdentity
         PwdLastSetVer = $(if ($Set) { [int]$Set.Version } else { 0 })
     }
 }
 
-# Read the Kerberos policy from the Default Domain Policy template in SYSVOL (read-only; defaults when unreadable)
 function Get-KrbtgtKerberosPolicy {
+    <#
+    .SYNOPSIS
+        The Kerberos policy from the Default Domain Policy template in SYSVOL (read-only; defaults when unreadable).
+    .DESCRIPTION
+        Reads \\<server>\SYSVOL\<domain>\Policies\{31B2F340-016D-11D2-945F-00C04FB984F9}\MACHINE\Microsoft\Windows NT\
+        SecEdit\GptTmpl.inf and parses it with ConvertFrom-KerberosPolicyInf. When the file cannot be read, the Windows
+        defaults are returned with Found = $false and the error text, so the caller can warn.
+    .PARAMETER DnsRoot
+        DNS name of the domain.
+    .PARAMETER Server
+        DC whose SYSVOL share to read. Empty = the domain name (DFS).
+    .EXAMPLE
+        Get-KrbtgtKerberosPolicy -DnsRoot $Dom.DNSRoot -Server $Dom.PDCEmulator
+    .OUTPUTS
+        PSCustomObject: MaxTicketAge, MaxServiceAge, MaxRenewAge, MaxClockSkew, Found, Path, Error
+    #>
     param([Parameter(Mandatory)][string]$DnsRoot, [string]$Server = '')
     $Host1 = $DnsRoot
     if ($Server) { $Host1 = $Server }

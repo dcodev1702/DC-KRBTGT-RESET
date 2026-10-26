@@ -1,55 +1,154 @@
-# Reset-KrbtgtPassword.ps1 - checks and resets the krbtgt account password of an Active Directory domain the way DISA
-# STIG V-254427 / WN22-DC-000430 requires: twice, with replication verified and the Kerberos ticket lifetime waited
-# between the two resets. Written for PowerShell 7; also runs in Windows PowerShell 5.1. ASCII-only.
-#
-# THE STIG ITEM (Microsoft Windows Server 2022 STIG V2R11, benchmark date 30 Sep 2026, from DISA's STIG library)
-#   V-254427 / WN22-DC-000430 / SV-254427r991589_rule / CAT II (medium) / CCI-000366 / SRG-OS-000480-GPOS-00227
-#   "The password for the krbtgt account on a domain must be reset at least every 180 days."
-#   Check: "Get-ADUser krbtgt -Property PasswordLastSet" - if PasswordLastSet is more than 180 days old, finding.
-#   Fix:   "The password must be changed twice to effectively remove the password history. Changing once, waiting for
-#           replication to complete and the amount of time equal to or greater than the maximum Kerberos ticket
-#           lifetime, and changing again reduces the risk of issues."
-#   The same rule exists for Windows Server 2025 (V-278176 / WN25-DC-000430), 2019 (V-205877 / WN19-DC-000430) and
-#   2016 (V-225006 / WN16-DC-000430); the script reports the one that matches each domain controller's OS.
-#
-# HOW THE SCRIPT VALIDATES THE ITEM
-#   1. Reads PasswordLastSet of the account with RID 502 (krbtgt) from the PDC emulator - the STIG check itself.
-#      More than -MaxAgeDays (180) old = Open, otherwise NotAFinding. Check mode exits 1 when Open (alerting).
-#   2. Reads the replication metadata of unicodePwd (version + originating DC) so every reset is provable on
-#      every writable DC, and records the last step of the pair in a state file.
-#   3. Reads the Kerberos policy from the Default Domain Policy template (MaxTicketAge, MaxServiceAge) and refuses
-#      reset 2 while less than that lifetime (10 h by default) has passed since reset 1 - the "waiting" in the fix.
-#   4. After a reset: Sync-ADObject to every writable DC and polls until every DC shows the new unicodePwd version.
-#
-# MODES
-#   -Mode Check (default, read-only): pre-flight + STIG status + next action. Changes nothing.
-#   -Mode Reset: pre-flight, then ONE reset of the pair on the PDC emulator (Set-ADAccountPassword -Reset with a
-#       random 64-character password that is never shown or logged), replication to every writable DC, verification,
-#       state file + run record. Run it again after the wait to perform reset 2 of 2.
-#   -Mode Reset -Immediate: both resets in one run, replication verified in between, no wait. For a suspected
-#       compromise only: every Kerberos ticket in the domain becomes invalid and clients must re-authenticate.
-#
-# USAGE
-#   .\Reset-KrbtgtPassword.ps1                                        # Check, the current domain
-#   .\Reset-KrbtgtPassword.ps1 -Mode Check -Domain child.corp.example # another domain (rights + LDAP needed)
-#   .\Reset-KrbtgtPassword.ps1 -Mode Reset                            # reset 1 of 2 (asks Y/N) ... wait >= 10 h ...
-#   .\Reset-KrbtgtPassword.ps1 -Mode Reset                            # reset 2 of 2 (asks Y/N)
-#   .\Reset-KrbtgtPassword.ps1 -Mode Reset -WhatIf                    # shows the plan, changes nothing
-#   .\Reset-KrbtgtPassword.ps1 -Mode Reset -NoConfirm                 # automation; the plan is still logged
-#   .\Reset-KrbtgtPassword.ps1 -Mode Reset -Immediate                 # compromise response: both resets now
-#
-# REQUIREMENTS: the ActiveDirectory module (RSAT), an account allowed to reset the krbtgt password (Domain Admins),
-#   LDAP to every writable DC of the domain. Elevation is not needed for the AD operations (reported only).
-#   Runs on a management computer or on a domain controller.
-#
-# EVIDENCE (no secret is ever written - not the password, not a hash):
-#   Logs\Reset-KrbtgtPassword-<mode>-<timestamp>.log  transcript        Logs\...csv  PASS/WARN/FAIL rows
-#   Outputs\<domain>\krbtgt-state.json                last step of the pair (trusted only while its unicodePwd
-#                                                     version matches AD)
-#   Outputs\<domain>\krbtgt-reset-<timestamp>-step<N>.json  one record per reset
-#
-# EXIT CODE: 0 = every check passed (warnings allowed); 1 = a check failed, the STIG item is Open (Check mode), or
-#   the script stopped. A STOP message always says what was and was not changed.
+<#
+.SYNOPSIS
+    Checks and resets the krbtgt account password of an Active Directory domain the way DISA STIG V-254427 /
+    WN22-DC-000430 requires: twice, with replication verified on every writable DC and the Kerberos ticket lifetime
+    waited between the two resets.
+
+.DESCRIPTION
+    THE STIG ITEM (Microsoft Windows Server 2022 STIG V2R11, benchmark date 30 Sep 2026, from DISA's STIG library)
+      V-254427 / WN22-DC-000430 / SV-254427r991589_rule / CAT II (medium) / CCI-000366 / SRG-OS-000480-GPOS-00227
+      "The password for the krbtgt account on a domain must be reset at least every 180 days."
+      Check: "Get-ADUser krbtgt -Property PasswordLastSet" - if PasswordLastSet is more than 180 days old, finding.
+      Fix:   "The password must be changed twice to effectively remove the password history. Changing once, waiting
+              for replication to complete and the amount of time equal to or greater than the maximum Kerberos ticket
+              lifetime, and changing again reduces the risk of issues."
+      The same rule exists for Windows Server 2025 (V-278176 / WN25-DC-000430), 2019 (V-205877 / WN19-DC-000430)
+      and 2016 (V-225006 / WN16-DC-000430); the script reports the one that matches each domain controller's OS.
+
+    HOW THE SCRIPT VALIDATES THE ITEM
+      1. Reads PasswordLastSet of the account with RID 502 (krbtgt) from the PDC emulator - the STIG check itself.
+         More than -MaxAgeDays (180) old = Open, otherwise NotAFinding. Check mode exits 1 when Open (alerting).
+      2. Reads the replication metadata of unicodePwd (version + originating DC) so every reset is provable on
+         every writable DC, and records the last step of the pair in a state file.
+      3. Reads the Kerberos policy from the Default Domain Policy template (MaxTicketAge, MaxServiceAge) and refuses
+         reset 2 while less than that lifetime (10 h by default) has passed since reset 1 - the "waiting" in the fix.
+      4. After a reset: Sync-ADObject to every writable DC and polls until every DC shows the new unicodePwd version.
+
+    MODES
+      -Mode Check (default, read-only): pre-flight + STIG status + next action. Changes nothing.
+      -Mode Reset: pre-flight, then ONE reset of the pair on the PDC emulator (Set-ADAccountPassword -Reset with a
+          random 64-character password that is never shown or logged), replication to every writable DC,
+          verification, state file + run record. Run it again after the wait to perform reset 2 of 2.
+      -Mode Reset -Immediate: both resets in one run, replication verified in between, no wait. For a suspected
+          compromise only: every Kerberos ticket in the domain becomes invalid and clients must re-authenticate.
+
+    SAFETY
+      Nothing changes before the plan has been shown in yellow and confirmed (Continue? [Y/N]); -NoConfirm is for
+      automation and -WhatIf shows the plan only. A non-interactive session without -NoConfirm stops before any
+      change. Unhealthy replication, an unreachable writable DC or a reset within the ticket lifetime stop the run.
+      A STOP message always says what was and was not changed. There is no undo for a krbtgt reset.
+
+.PARAMETER Mode
+    Check (default) is read-only and reports the STIG status and the next action. Reset performs one reset of the
+    pair (or both with -Immediate).
+
+.PARAMETER Domain
+    DNS name of the domain to check or reset. Empty = the domain of the current logon. Rights and LDAP access to
+    that domain's DCs are required.
+
+.PARAMETER Server
+    Writable domain controller to read from and to reset on (short name or FQDN). Empty = the PDC emulator, which is
+    recommended. A name that is not a writable DC of the domain stops the run.
+
+.PARAMETER Credential
+    Credential for every Active Directory operation. Empty = the current logon.
+
+.PARAMETER MaxAgeDays
+    The item is Open when PasswordLastSet is older than this many days. 180 in every release of the STIG; lower it
+    for a stricter local policy.
+
+.PARAMETER MinHoursBetweenResets
+    Minimum hours between reset 1 and reset 2. 0 (default) derives it from the Kerberos policy: the longest of
+    MaxTicketAge and MaxServiceAge, 10 h with Windows defaults. A value below the policy is raised to the policy
+    value; a higher value is honoured.
+
+.PARAMETER PairWindowDays
+    Without a trusted state file, a password set within this many days is treated as reset 1 of a pair, so the run
+    becomes reset 2 of 2. Default 7.
+
+.PARAMETER ReplicationTimeoutMinutes
+    How long to wait for every writable DC to show the new unicodePwd version after a reset. Default 15.
+
+.PARAMETER Immediate
+    Compromise response: both resets in this run (or reset 2 right away) without waiting the ticket lifetime.
+    Every Kerberos ticket in the domain becomes invalid; users, services and computers re-authenticate.
+
+.PARAMETER KerberosPolicyPath
+    A security template (GptTmpl.inf) to read the [Kerberos Policy] section from. Empty = the Default Domain Policy
+    template in SYSVOL.
+
+.PARAMETER OutputPath
+    Folder for the state file (Outputs\<domain>\krbtgt-state.json) and the run records. Default <repo>\Outputs.
+    Point it to a share so every administrator sees the same state.
+
+.PARAMETER LogPath
+    Folder for transcripts and CSV results. Default <repo>\Logs.
+
+.PARAMETER NoConfirm
+    No Y/N prompt (scheduled task, automation). The plan is still printed and transcribed.
+
+.PARAMETER WhatIf
+    Shows the plan and performs no reset. No prompt.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1
+    Read-only check of the current domain: STIG status, pre-flight, next action. Exit code 1 when the item is Open.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1 -Mode Check -Domain child.corp.example -Credential (Get-Credential)
+    The same check against another domain with explicit credentials.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1 -Mode Reset -WhatIf
+    Shows exactly what a reset run would do; nothing is changed and nothing is asked.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1 -Mode Reset
+    Reset 1 of 2 (asks Continue? [Y/N]). Run the same command again at least 10 h later for reset 2 of 2; running it
+    earlier is refused as too soon.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1 -Mode Reset -NoConfirm -OutputPath \\fs01\krbtgt-state
+    Unattended run (scheduled task) with the state file on a share.
+
+.EXAMPLE
+    .\Reset-KrbtgtPassword.ps1 -Mode Reset -Immediate
+    Suspected compromise: both resets now, replication verified between them, no wait.
+
+.INPUTS
+    None. The script does not accept pipeline input.
+
+.OUTPUTS
+    None to the pipeline. Console output with PASS/WARN/FAIL rows; a transcript and a CSV in -LogPath; a state file
+    and a JSON run record per reset in -OutputPath. Exit code 0 = every check passed (warnings allowed); 1 = a check
+    failed, the STIG item is Open (Check mode), or the script stopped.
+
+.NOTES
+    Requirements: the ActiveDirectory module (RSAT), an account allowed to reset the krbtgt password (Domain Admins),
+    LDAP to every writable DC of the domain. Elevation is not needed for the AD operations and is only reported.
+    Runs on a management computer or on a domain controller. Written for PowerShell 7; also runs in Windows
+    PowerShell 5.1. ASCII-only source.
+
+    Evidence: no secret is ever written - not the password, not a hash. Security events 4724 and 4738 for krbtgt
+    are logged on the DC that took the reset.
+
+    Generative AI was used in the creation and validation of this code (test harness, lab runs and documentation);
+    the result was reviewed and run in a lab by a person before publication.
+
+    Repository: https://github.com/dcodev1702/DC-KRBTGT-RESET   License: MIT
+
+.LINK
+    https://github.com/dcodev1702/DC-KRBTGT-RESET
+
+.LINK
+    https://public.cyber.mil/stigs/downloads/
+
+.LINK
+    https://learn.microsoft.com/windows-server/identity/ad-ds/manage/forest-recovery-guide/ad-forest-recovery-reset-the-krbtgt-password
+
+.LINK
+    https://learn.microsoft.com/windows-server/identity/ad-ds/manage/understand-default-user-accounts#krbtgt-account
+#>
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
     [ValidateSet('Check', 'Reset')][string]$Mode = 'Check',

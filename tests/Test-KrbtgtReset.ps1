@@ -1,11 +1,45 @@
-# Tests for scripts\Krbtgt-Common.ps1, scripts\Confirm-Change.ps1 and scripts\Reset-KrbtgtPassword.ps1.
-# No network, no domain, nothing changed outside a temporary folder (deleted at the end). The Active Directory cmdlets
-# are shadowed by mock functions, so the main script runs end to end (Check, Reset, too-soon STOP, -Immediate, -WhatIf,
-# unreachable DC, replication failure, stale state) without touching a real domain.
-# Windows PowerShell 5.1 and PowerShell 7, no Pester needed. ASCII-only. Run it with -NonInteractive so the
-# "non-interactive session stops before changing anything" test is meaningful:
-#   pwsh       -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\tests\Test-KrbtgtReset.ps1
-#   powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\tests\Test-KrbtgtReset.ps1
+<#
+.SYNOPSIS
+    Tests for scripts\Krbtgt-Common.ps1, scripts\Confirm-Change.ps1 and scripts\Reset-KrbtgtPassword.ps1: 121 checks,
+    no domain, no network, nothing changed outside a temporary folder.
+
+.DESCRIPTION
+    Groups:
+      A. every script parses in the running edition and is ASCII-only
+      B. STIG items per Windows Server release and the Open / NotAFinding status rule (180 days)
+      C. Kerberos policy parsing from untrusted template text and the minimum-wait rule
+      D. password generation (64 characters, read-only SecureString, all classes, unbiased index sampling)
+      E. state file round trip and every malformed variant
+      F. next-step decision (trusted / stale / absent state, pair window, too soon)
+      G. the confirmation gate with Read-Host and Test-Interactive replaced (Y, yes, N, invalid x3, non-interactive, -NoConfirm)
+      H. end-to-end runs of Reset-KrbtgtPassword.ps1 against a mocked Active Directory: the AD cmdlets are shadowed by
+         global functions, so Check, Reset, -WhatIf, -Immediate, the too-soon STOP, unreachable DCs, replication
+         failures, a replication that never confirms, -Server validation, a wrong RID-502 name, RODC and enabled-krbtgt
+         warnings and an unknown domain are all exercised without touching a real domain.
+
+    Run it with -NonInteractive so the "non-interactive session stops before changing anything" test is meaningful.
+    The temporary folder is deleted and the mock functions are removed at the end.
+
+.EXAMPLE
+    pwsh -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\tests\Test-KrbtgtReset.ps1
+    Expected last line: ALL 121 TESTS PASSED (exit code 0). Any failure prints FAIL lines and exits 1.
+
+.EXAMPLE
+    powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File .\tests\Test-KrbtgtReset.ps1
+    The same in Windows PowerShell 5.1.
+
+.OUTPUTS
+    PASS / FAIL lines on the console; exit code 1 when any test fails.
+
+.NOTES
+    Windows PowerShell 5.1 and PowerShell 7, no Pester needed. ASCII-only source.
+
+    Generative AI was used in the creation and validation of this code; the result was reviewed and run by a person
+    in both editions.
+
+.LINK
+    https://github.com/dcodev1702/DC-KRBTGT-RESET
+#>
 param()
 $ErrorActionPreference = 'Stop'
 $Root = Split-Path -Parent $PSScriptRoot
