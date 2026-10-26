@@ -1,0 +1,316 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 1888" width="1600" height="1888" font-family="Segoe UI, Inter, Helvetica, Arial, sans-serif" role="img" aria-labelledby="t d">
+  <title id="t">KRBTGT PASSWORD RESET ON DOMAIN CONTROLLERS</title>
+  <desc id="d">A management computer (or a domain controller) runs Reset-KrbtgtPassword.ps1. The read-only pre-flight reads the domain, the PDC emulator, every writable DC, the krbtgt account and its unicodePwd replication version, the Kerberos policy from SYSVOL and the replication health. A reset is performed on the PDC emulator, replicated with Sync-ADObject to every writable DC and verified there. The Kerberos clients and services keep working after reset 1 because the password history holds two keys; after reset 2 every ticket issued before reset 1 is rejected. The lower panel shows the two-reset cycle, the compromise mode and the STIG outcome for V-254427 / WN22-DC-000430 and its Server 2025, 2019 and 2016 equivalents.</desc>
+  <defs>
+    <linearGradient id="bgGrad" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#070b16"/><stop offset="0.55" stop-color="#0a0e1a"/><stop offset="1" stop-color="#0b1020"/></linearGradient>
+    <linearGradient id="hostGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#101728" stop-opacity="0.95"/><stop offset="1" stop-color="#0b1020" stop-opacity="0.95"/></linearGradient>
+    <linearGradient id="cardGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#131c31"/><stop offset="1" stop-color="#0c1322"/></linearGradient>
+    <linearGradient id="barGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#083648"/><stop offset="0.5" stop-color="#074156"/><stop offset="1" stop-color="#083648"/></linearGradient>
+    <linearGradient id="panelGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#0f1b39"/><stop offset="1" stop-color="#0a1024"/></linearGradient>
+    <linearGradient id="bannerGrad" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#1a4234"/><stop offset="0.5" stop-color="#20573e"/><stop offset="1" stop-color="#1a4234"/></linearGradient>
+    <linearGradient id="titleLine" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stop-color="#00d4ff"/><stop offset="0.5" stop-color="#b660ff"/><stop offset="1" stop-color="#ff5ec4"/></linearGradient>
+    <linearGradient id="cardTint1" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#231e42"/><stop offset="1" stop-color="#0c1322"/></linearGradient>
+    <linearGradient id="laneDown" gradientUnits="userSpaceOnUse" x1="0" y1="1109" x2="0" y2="1277"><stop offset="0" stop-color="#00d4ff" stop-opacity="0.18"/><stop offset="0.55" stop-color="#00d4ff" stop-opacity="0.75"/><stop offset="1" stop-color="#00d4ff"/></linearGradient><linearGradient id="laneUp" gradientUnits="userSpaceOnUse" x1="0" y1="1277" x2="0" y2="1109"><stop offset="0" stop-color="#b660ff" stop-opacity="0.18"/><stop offset="0.55" stop-color="#b660ff" stop-opacity="0.75"/><stop offset="1" stop-color="#b660ff"/></linearGradient>
+    <filter id="neonGlow" x="-60%" y="-60%" width="220%" height="220%"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%"><feGaussianBlur stdDeviation="3" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+    <marker id="arrDown" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L10 5 L0 10 Z" fill="#00d4ff"/></marker>
+    <marker id="arrUp" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="3.6" markerHeight="3.6" orient="auto" markerUnits="strokeWidth"><path d="M0 0 L10 5 L0 10 Z" fill="#b660ff"/></marker>
+  </defs>
+  <rect width="1600" height="1888" fill="url(#bgGrad)"/>
+  <g stroke="#1a2238" stroke-width="0.5" opacity="0.35"><path d="M0 100 H1600 M0 200 H1600 M0 300 H1600 M0 400 H1600 M0 500 H1600 M0 600 H1600 M0 700 H1600 M0 800 H1600 M0 900 H1600 M0 1000 H1600 M0 1100 H1600 M0 1200 H1600 M0 1300 H1600 M0 1400 H1600 M0 1500 H1600 M0 1600 H1600 M0 1700 H1600 M0 1800 H1600 M100 0 V1888 M200 0 V1888 M300 0 V1888 M400 0 V1888 M500 0 V1888 M600 0 V1888 M700 0 V1888 M800 0 V1888 M900 0 V1888 M1000 0 V1888 M1100 0 V1888 M1200 0 V1888 M1300 0 V1888 M1400 0 V1888 M1500 0 V1888"/></g>
+<text x="40" y="58" fill="#e8eef7" font-size="30" font-weight="700" letter-spacing="0.6">KRBTGT PASSWORD RESET ON DOMAIN CONTROLLERS</text>
+<text x="40" y="86" fill="#7b8aa6" font-size="14" letter-spacing="1.4">DISA STIG V-254427 · WN22-DC-000430 · TWO RESETS PER CYCLE · WAIT &gt;= TICKET LIFETIME · POWERSHELL 7 (5.1 OK) · AD MODULE ONLY</text>
+<rect x="40" y="98" width="817" height="3" rx="1.5" fill="url(#titleLine)" />
+<rect x="1116.44" y="40" width="443.56" height="34" rx="17" fill="#0a1124" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.5" />
+<circle cx="1136.44" cy="57" r="5" fill="#4ade80" filter="url(#softGlow)"/>
+<text x="1152.44" y="62" fill="#cfe9ff" font-size="12.5" font-weight="600" letter-spacing="0.8">WINDOWS SERVER 2022 STIG V2R11 · 30 SEP 2026 · CAT II</text>
+<rect x="40" y="130" width="1520" height="975" rx="22" fill="url(#hostGrad)" stroke="#2a3450" stroke-width="1.5" />
+<rect x="62" y="152" width="252.81" height="32" rx="6" fill="#0a1124" stroke="#b660ff" stroke-width="1" />
+<circle cx="78" cy="168" r="4" fill="#b660ff" filter="url(#softGlow)"/>
+<text x="94" y="173" fill="#f0dfff" font-size="13" font-weight="600" letter-spacing="1.2">ACTIVE DIRECTORY DOMAIN</text>
+<text x="330.81" y="173" fill="#64748b" font-size="12">the management computer or a DC runs the script · the PDC emulator takes the reset · every writable DC is verified</text>
+<g transform="translate(62,220)">
+<rect x="0" y="0" width="456" height="645" rx="14" fill="url(#cardGrad)" stroke="#fb923c" stroke-width="1.5" />
+<rect x="0" y="0" width="456" height="6" rx="3" fill="#fb923c" filter="url(#neonGlow)"/>
+<g transform="translate(22,26) scale(1)" fill="none" stroke="#fb923c" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x='1' y='4' width='32' height='26' rx='3'/><path d='M7 13 L12 17 L7 21 M15 22 H24'/></g>
+<text x="76" y="42" fill="#e8eef7" font-size="19" font-weight="700">MANAGEMENT COMPUTER</text>
+<text x="76" y="62" fill="#fb923c" font-size="12" font-weight="600" letter-spacing="1.5">PAW / JUMP HOST OR A DC · RUNS THE SCRIPT</text>
+<line x1="22" y1="86" x2="434" y2="86" stroke="#2a3450"/>
+<text x="22" y="106" fill="#94a3b8" font-size="11" letter-spacing="1.2">ROLE</text>
+<text x="22" y="124" fill="#cbd5e1" font-size="13">Runs Reset-KrbtgtPassword.ps1 with the ActiveDirectory module over</text>
+<text x="22" y="142" fill="#cbd5e1" font-size="13">LDAP; no agent, no download, no other tool</text>
+<text x="22" y="170" fill="#94a3b8" font-size="11" letter-spacing="1.2">PRE-FLIGHT · READ-ONLY</text>
+<circle cx="26" cy="186.5" r="3" fill="#fbbf24" />
+<text x="36" y="190" fill="#e2e8f0" font-size="12.5">PowerShell 7 or 5.1 · ActiveDirectory module</text>
+<circle cx="26" cy="206.5" r="3" fill="#fbbf24" />
+<text x="36" y="210" fill="#e2e8f0" font-size="12.5">Domain, PDC emulator, writable DCs, RODCs</text>
+<circle cx="26" cy="226.5" r="3" fill="#fbbf24" />
+<text x="36" y="230" fill="#e2e8f0" font-size="12.5">krbtgt by SID (RID 502) · PasswordLastSet</text>
+<circle cx="26" cy="246.5" r="3" fill="#fbbf24" />
+<text x="36" y="250" fill="#e2e8f0" font-size="12.5">unicodePwd replication version + originating DC</text>
+<circle cx="26" cy="266.5" r="3" fill="#fbbf24" />
+<text x="36" y="270" fill="#e2e8f0" font-size="12.5">Kerberos policy from SYSVOL GptTmpl.inf</text>
+<circle cx="26" cy="286.5" r="3" fill="#fbbf24" />
+<text x="36" y="290" fill="#e2e8f0" font-size="12.5">Replication failures + partner results</text>
+<circle cx="26" cy="306.5" r="3" fill="#fbbf24" />
+<text x="36" y="310" fill="#e2e8f0" font-size="12.5">LDAP bind to every writable DC</text>
+<text x="22" y="338" fill="#94a3b8" font-size="11" letter-spacing="1.2">DECIDES</text>
+<circle cx="26" cy="354.5" r="3" fill="#00d4ff" />
+<text x="36" y="358" fill="#e2e8f0" font-size="12.5">Reset 1 of 2 or 2 of 2 (state file + AD version)</text>
+<circle cx="26" cy="374.5" r="3" fill="#00d4ff" />
+<text x="36" y="378" fill="#e2e8f0" font-size="12.5">STOP if &lt; ticket lifetime since the last reset</text>
+<circle cx="26" cy="394.5" r="3" fill="#fbbf24" />
+<text x="36" y="398" fill="#e2e8f0" font-size="12.5">Changes ask Y/N · -NoConfirm · -WhatIf</text>
+<text x="22" y="426" fill="#94a3b8" font-size="11" letter-spacing="1.2">OUTPUT</text>
+<text x="22" y="446" fill="#a5d8ff" font-size="11.5" font-family="Cascadia Mono, Consolas, Courier New, monospace">Logs\Reset-KrbtgtPassword-&lt;mode&gt;-&lt;stamp&gt;.log + .csv</text>
+<text x="22" y="466" fill="#a5d8ff" font-size="11.5" font-family="Cascadia Mono, Consolas, Courier New, monospace">Outputs\&lt;domain&gt;\krbtgt-state.json</text>
+<text x="22" y="486" fill="#c6d0e2" font-size="12.5">one JSON record per reset · exit 1 on Open / STOP</text>
+<rect x="22" y="506" width="412" height="59" rx="8" fill="#0a1124" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.55" />
+<text x="38" y="524" fill="#fcd571" font-size="11" font-weight="700" letter-spacing="0.8">IMPORTANT · NO SECRET IS EVER WRITTEN</text>
+<text x="38" y="542" fill="#eee0b8" font-size="11">The new password is 64 random characters from a cryptographic RNG, built as</text>
+<text x="38" y="557" fill="#eee0b8" font-size="11">a read-only SecureString, never shown, logged or hashed.</text>
+<rect x="22" y="581" width="412" height="38" rx="8" fill="#0a1124" stroke="#fb923c" stroke-width="1" stroke-opacity="0.45" />
+<circle cx="40" cy="600" r="4" fill="#fb923c" filter="url(#softGlow)"/>
+<text x="54" y="605" fill="#cfe9ff" font-size="12" font-weight="600">PS 7 OR 5.1 · RSAT AD · DOMAIN ADMIN · LDAP</text>
+</g>
+<g transform="translate(572,220)">
+<rect x="0" y="0" width="456" height="645" rx="14" fill="url(#cardTint1)" stroke="#b660ff" stroke-width="1.5" />
+<rect x="0" y="0" width="456" height="6" rx="3" fill="#b660ff" filter="url(#neonGlow)"/>
+<g transform="translate(22,26) scale(1)" fill="none" stroke="#b660ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x='0' y='0' width='34' height='10' rx='2'/><rect x='0' y='14' width='34' height='10' rx='2'/><rect x='0' y='28' width='34' height='10' rx='2'/><circle cx='27' cy='5' r='1.8' fill='#b660ff'/><circle cx='27' cy='19' r='1.8' fill='#b660ff'/><circle cx='27' cy='33' r='1.8' fill='#b660ff'/></g>
+<text x="76" y="42" fill="#e8eef7" font-size="19" font-weight="700">PDC EMULATOR</text>
+<text x="76" y="62" fill="#b660ff" font-size="12" font-weight="600" letter-spacing="1.5">TAKES THE RESET · REPLICATES TO ALL WRITABLE DCS</text>
+<line x1="22" y1="86" x2="434" y2="86" stroke="#2a3450"/>
+<text x="22" y="106" fill="#94a3b8" font-size="11" letter-spacing="1.2">ROLE</text>
+<text x="22" y="124" fill="#cbd5e1" font-size="13">Set-ADAccountPassword -Reset on CN=krbtgt, then Sync-ADObject to</text>
+<text x="22" y="142" fill="#cbd5e1" font-size="13">every other writable DC and verification on each one</text>
+<text x="22" y="170" fill="#94a3b8" font-size="11" letter-spacing="1.2">RESET</text>
+<circle cx="26" cy="186.5" r="3" fill="#4ade80" />
+<text x="36" y="190" fill="#e2e8f0" font-size="12.5">unicodePwd version N -&gt; N+1</text>
+<circle cx="26" cy="206.5" r="3" fill="#4ade80" />
+<text x="36" y="210" fill="#e2e8f0" font-size="12.5">PasswordLastSet = now (the STIG check value)</text>
+<circle cx="26" cy="226.5" r="3" fill="#4ade80" />
+<text x="36" y="230" fill="#e2e8f0" font-size="12.5">Verified on the PDC before anything else</text>
+<text x="22" y="258" fill="#94a3b8" font-size="11" letter-spacing="1.2">REPLICATE · VERIFY</text>
+<circle cx="26" cy="274.5" r="3" fill="#00d4ff" />
+<text x="36" y="278" fill="#e2e8f0" font-size="12.5">Sync-ADObject PDC -&gt; each writable DC</text>
+<circle cx="26" cy="294.5" r="3" fill="#00d4ff" />
+<text x="36" y="298" fill="#e2e8f0" font-size="12.5">Poll every DC until it shows version N+1</text>
+<circle cx="26" cy="314.5" r="3" fill="#00d4ff" />
+<text x="36" y="318" fill="#e2e8f0" font-size="12.5">Up to -ReplicationTimeoutMinutes (15)</text>
+<circle cx="26" cy="334.5" r="3" fill="#00d4ff" />
+<text x="36" y="338" fill="#e2e8f0" font-size="12.5">Not confirmed = FAIL, next reset refused</text>
+<text x="22" y="366" fill="#94a3b8" font-size="11" letter-spacing="1.2">PASSWORD HISTORY = 2</text>
+<circle cx="26" cy="382.5" r="3" fill="#b660ff" />
+<text x="36" y="386" fill="#e2e8f0" font-size="12.5">After reset 1: old key still accepted (N-1)</text>
+<circle cx="26" cy="402.5" r="3" fill="#b660ff" />
+<text x="36" y="406" fill="#e2e8f0" font-size="12.5">After reset 2: the pre-reset key is gone</text>
+<circle cx="26" cy="422.5" r="3" fill="#b660ff" />
+<text x="36" y="426" fill="#e2e8f0" font-size="12.5">That is why the STIG wants two resets</text>
+<rect x="22" y="506" width="412" height="59" rx="8" fill="#0a1124" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.55" />
+<text x="38" y="524" fill="#fcd571" font-size="11" font-weight="700" letter-spacing="0.8">CRITICAL · NO UNDO</text>
+<text x="38" y="542" fill="#eee0b8" font-size="11">The old key cannot be restored. If something breaks, clients recover by</text>
+<text x="38" y="557" fill="#eee0b8" font-size="11">re-authenticating; Microsoft: a reboot is the only reliable recovery.</text>
+<rect x="22" y="581" width="412" height="38" rx="8" fill="#0a1124" stroke="#b660ff" stroke-width="1" stroke-opacity="0.45" />
+<circle cx="40" cy="600" r="4" fill="#b660ff" filter="url(#softGlow)"/>
+<text x="54" y="605" fill="#cfe9ff" font-size="12" font-weight="600">WRITABLE DCs ONLY · RODC krbtgt_* NOT TOUCHED</text>
+</g>
+<g transform="translate(1082,220)">
+<rect x="0" y="0" width="456" height="645" rx="14" fill="url(#cardGrad)" stroke="#00d4ff" stroke-width="1.5" />
+<rect x="0" y="0" width="456" height="6" rx="3" fill="#00d4ff" filter="url(#neonGlow)"/>
+<g transform="translate(22,26) scale(1)" fill="none" stroke="#00d4ff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x='0' y='0' width='15' height='15' rx='2' fill='#00d4ff' stroke='none'/><rect x='19' y='0' width='15' height='15' rx='2' fill='#00d4ff' stroke='none'/><rect x='0' y='19' width='15' height='15' rx='2' fill='#00d4ff' stroke='none'/><rect x='19' y='19' width='15' height='15' rx='2' fill='#00d4ff' stroke='none'/></g>
+<text x="76" y="42" fill="#e8eef7" font-size="19" font-weight="700">KERBEROS CLIENTS + SERVICES</text>
+<text x="76" y="62" fill="#00d4ff" font-size="12" font-weight="600" letter-spacing="1.5">EVERY TGT IS SEALED WITH THE KRBTGT KEY</text>
+<line x1="22" y1="86" x2="434" y2="86" stroke="#2a3450"/>
+<text x="22" y="106" fill="#94a3b8" font-size="11" letter-spacing="1.2">ROLE</text>
+<text x="22" y="124" fill="#cbd5e1" font-size="13">Users, computers and services hold TGTs for up to MaxTicketAge (10 h)</text>
+<text x="22" y="142" fill="#cbd5e1" font-size="13">and service tickets for up to MaxServiceAge (600 min)</text>
+<text x="22" y="170" fill="#94a3b8" font-size="11" letter-spacing="1.2">AFTER RESET 1</text>
+<circle cx="26" cy="186.5" r="3" fill="#4ade80" />
+<text x="36" y="190" fill="#e2e8f0" font-size="12.5">KDCs accept tickets from key N and N-1</text>
+<circle cx="26" cy="206.5" r="3" fill="#4ade80" />
+<text x="36" y="210" fill="#e2e8f0" font-size="12.5">Nobody notices; new TGTs use the new key</text>
+<text x="22" y="238" fill="#94a3b8" font-size="11" letter-spacing="1.2">AFTER RESET 2 (&gt;= 10 H LATER)</text>
+<circle cx="26" cy="254.5" r="3" fill="#fbbf24" />
+<text x="36" y="258" fill="#e2e8f0" font-size="12.5">Tickets issued before reset 1 are rejected</text>
+<circle cx="26" cy="274.5" r="3" fill="#fbbf24" />
+<text x="36" y="278" fill="#e2e8f0" font-size="12.5">Clients request new TGTs transparently</text>
+<circle cx="26" cy="294.5" r="3" fill="#fbbf24" />
+<text x="36" y="298" fill="#e2e8f0" font-size="12.5">Stuck sessions: sign out / reboot</text>
+<text x="22" y="326" fill="#94a3b8" font-size="11" letter-spacing="1.2">-IMMEDIATE (COMPROMISE)</text>
+<circle cx="26" cy="342.5" r="3" fill="#fb7185" />
+<text x="36" y="346" fill="#e2e8f0" font-size="12.5">Both resets in one run, no wait</text>
+<circle cx="26" cy="362.5" r="3" fill="#fb7185" />
+<text x="36" y="366" fill="#e2e8f0" font-size="12.5">Every ticket in the domain is invalid at once</text>
+<circle cx="26" cy="382.5" r="3" fill="#fb7185" />
+<text x="36" y="386" fill="#e2e8f0" font-size="12.5">Users, services and computers re-authenticate</text>
+<text x="22" y="414" fill="#94a3b8" font-size="11" letter-spacing="1.2">NOT AFFECTED</text>
+<circle cx="26" cy="430.5" r="3" fill="#4ade80" />
+<text x="36" y="434" fill="#e2e8f0" font-size="12.5">NTLM-authenticated connections</text>
+<circle cx="26" cy="450.5" r="3" fill="#4ade80" />
+<text x="36" y="454" fill="#e2e8f0" font-size="12.5">Open sessions, until their service ticket renews</text>
+<rect x="22" y="491" width="412" height="74" rx="8" fill="#0a1124" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.55" />
+<text x="38" y="509" fill="#fcd571" font-size="11" font-weight="700" letter-spacing="0.8">TIP · WAIT AT LEAST THE TICKET LIFETIME</text>
+<text x="38" y="527" fill="#eee0b8" font-size="11">The script derives the wait from the Kerberos policy (longest of MaxTicketAge</text>
+<text x="38" y="542" fill="#eee0b8" font-size="11">and MaxServiceAge) and refuses reset 2 before it; -MinHoursBetweenResets</text>
+<text x="38" y="557" fill="#eee0b8" font-size="11">can only raise it.</text>
+<rect x="22" y="581" width="412" height="38" rx="8" fill="#0a1124" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.45" />
+<circle cx="40" cy="600" r="4" fill="#00d4ff" filter="url(#softGlow)"/>
+<text x="54" y="605" fill="#cfe9ff" font-size="12" font-weight="600">GOLDEN TICKET DEFENSE · CCI-000366</text>
+</g>
+<path d="M290 865 V925" stroke="#fb923c" stroke-width="2" stroke-dasharray="4 4" opacity="0.75" fill="none"/>
+<circle cx="290" cy="865" r="5" fill="#0a0e1a" stroke="#fb923c" stroke-width="2" />
+<text x="302" y="899" fill="#7b8aa6" font-size="11" font-weight="600" letter-spacing="0.4">pre-flight · reset (LDAP)</text>
+<path d="M800 865 V925" stroke="#b660ff" stroke-width="2" stroke-dasharray="4 4" opacity="0.75" fill="none"/>
+<circle cx="800" cy="865" r="5" fill="#0a0e1a" stroke="#b660ff" stroke-width="2" />
+<text x="812" y="899" fill="#7b8aa6" font-size="11" font-weight="600" letter-spacing="0.4">Sync-ADObject · verify</text>
+<path d="M1310 865 V925" stroke="#00d4ff" stroke-width="2" stroke-dasharray="4 4" opacity="0.75" fill="none"/>
+<circle cx="1310" cy="865" r="5" fill="#0a0e1a" stroke="#00d4ff" stroke-width="2" />
+<text x="1322" y="899" fill="#7b8aa6" font-size="11" font-weight="600" letter-spacing="0.4">TGT · service tickets</text>
+<rect x="120" y="925" width="1360" height="110" rx="14" fill="url(#barGrad)" stroke="#00d4ff" stroke-width="1.5" filter="url(#softGlow)"/>
+<rect x="160" y="950" width="387.85" height="32" rx="6" fill="#0a1124" stroke="#00d4ff" stroke-width="1" />
+<circle cx="176" cy="966" r="4" fill="#00d4ff" filter="url(#softGlow)"/>
+<text x="192" y="971" fill="#ccf6ff" font-size="13" font-weight="600" letter-spacing="1.4">DEFAULT DOMAIN POLICY · KERBEROS POLICY</text>
+<text x="607.85" y="961" fill="#bff4ff" font-size="13" font-weight="600">MaxTicketAge 10 h · MaxServiceAge 600 min · MaxRenewAge 7 d (Windows defaults)</text>
+<text x="607.85" y="980" fill="#51b9d8" font-size="11">Read from \\&lt;domain&gt;\SYSVOL\...\{31B2F340-016D-11D2-945F-00C04FB984F9}\MACHINE\Microsoft\</text>
+<text x="607.85" y="995" fill="#51b9d8" font-size="11">Windows NT\SecEdit\GptTmpl.inf, or -KerberosPolicyPath · the minimum wait between reset 1 and reset 2 is</text>
+<text x="607.85" y="1010" fill="#51b9d8" font-size="11">the longest lifetime</text>
+<rect x="1167.3" y="950" width="292.7" height="32" rx="6" fill="#0a1124" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.6" />
+<text x="1181.3" y="970" fill="#bff4ff" font-size="12" font-weight="600">Reset-KrbtgtPassword.ps1 -Mode Check | Reset</text>
+<rect x="380" y="1119" width="844" height="148" rx="16" fill="#080d1b" stroke="#1c2740" stroke-width="1" fill-opacity="0.55"/>
+<circle cx="700" cy="1105" r="5.5" fill="#0a0e1a" stroke="#00d4ff" stroke-width="2.5" />
+<line x1="700" y1="1109" x2="700" y2="1273" stroke="#00d4ff" stroke-width="15" opacity="0.12" stroke-linecap="round"/>
+<line x1="700" y1="1109" x2="700" y2="1277" stroke="url(#laneDown)" stroke-width="5" stroke-dasharray="10 7" marker-end="url(#arrDown)"/>
+<text x="660" y="1153" fill="#80eaff" font-size="13" font-weight="700" letter-spacing="0.4" text-anchor="end">RESET FLOW</text>
+<text x="660" y="1171" fill="#3c9ab9" font-size="10.5" text-anchor="end">management computer → PDC → every writable DC</text>
+<rect x="423" y="1183" width="150.05" height="20" rx="10" fill="#0a1124" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.5" />
+<text x="498.03" y="1196.42" fill="#73e7ff" font-size="9.5" text-anchor="middle">Set-ADAccountPassword -Reset</text>
+<rect x="579.05" y="1183" width="80.99" height="20" rx="10" fill="#0a1124" stroke="#00d4ff" stroke-width="1" stroke-opacity="0.5" />
+<text x="619.54" y="1196.42" fill="#73e7ff" font-size="9.5" text-anchor="middle">Sync-ADObject</text>
+<rect x="725" y="1161" width="150" height="48" rx="10" fill="#0a1124" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.55" />
+<circle cx="744" cy="1179" r="3.5" fill="#80eaff" filter="url(#softGlow)"/>
+<text x="756" y="1183" fill="#cfe9ff" font-size="10.5" font-weight="600" letter-spacing="0.9">LDAP</text>
+<text x="800" y="1200" fill="#64748b" font-size="9.5" text-anchor="middle">AD module · Kerberos auth</text>
+<circle cx="900" cy="1281" r="5.5" fill="#0a0e1a" stroke="#b660ff" stroke-width="2.5" />
+<line x1="900" y1="1277" x2="900" y2="1113" stroke="#b660ff" stroke-width="15" opacity="0.12" stroke-linecap="round"/>
+<line x1="900" y1="1277" x2="900" y2="1109" stroke="url(#laneUp)" stroke-width="5" stroke-dasharray="10 7" marker-end="url(#arrUp)"/>
+<text x="940" y="1153" fill="#d7a8ff" font-size="13" font-weight="700" letter-spacing="0.4">EVIDENCE</text>
+<text x="940" y="1171" fill="#8d6ac5" font-size="10.5">read back from every DC, not from variables</text>
+<rect x="940" y="1183" width="101.89" height="20" rx="10" fill="#0a1124" stroke="#b660ff" stroke-width="1" stroke-opacity="0.5" />
+<text x="990.94" y="1196.42" fill="#d7a8ff" font-size="9.5" text-anchor="middle">unicodePwd version</text>
+<rect x="1047.89" y="1183" width="87.35" height="20" rx="10" fill="#0a1124" stroke="#b660ff" stroke-width="1" stroke-opacity="0.5" />
+<text x="1091.56" y="1196.42" fill="#d7a8ff" font-size="9.5" text-anchor="middle">PasswordLastSet</text>
+<rect x="80" y="1281" width="1440" height="483" rx="18" fill="url(#panelGrad)" stroke="#3b82f6" stroke-width="1.5" opacity="0.98"/>
+<g stroke="#6ca1f8" stroke-width="2" opacity="0.7" fill="none"><path d="M80 1309 V1281 H108"/><path d="M1520 1309 V1281 H1492"/><path d="M80 1736 V1764 H108"/><path d="M1520 1736 V1764 H1492"/></g>
+<rect x="110" y="1301" width="313.02" height="32" rx="6" fill="#0a1124" stroke="#3b82f6" stroke-width="1" />
+<circle cx="126" cy="1317" r="4" fill="#3b82f6" filter="url(#softGlow)"/>
+<text x="142" y="1322" fill="#d8e6fd" font-size="13" font-weight="600" letter-spacing="1.2">TWO-RESET CYCLE + STIG OUTCOME</text>
+<text x="439.02" y="1322" fill="#64748b" font-size="12">one reset per run, the wait in between · what each step proves</text>
+<rect x="110" y="1351" width="1380" height="54" rx="10" fill="url(#bannerGrad)" stroke="#4ade80" stroke-width="1.5" filter="url(#softGlow)"/>
+<g transform="translate(132,1362) scale(0.9)" fill="none" stroke="#9bedb9" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d='M17 1 L32 7 V19 C32 27 25 32 17 33 C9 32 2 27 2 19 V7 Z'/><path d='M10 17 L15 22 L24 12'/></g>
+<text x="178" y="1375" fill="#e8eef7" font-size="17" font-weight="700">V-254427 / WN22-DC-000430 · CAT II · CCI-000366</text>
+<text x="178" y="1395" fill="#6bc399" font-size="12" letter-spacing="0.8">check: Get-ADUser krbtgt -Property PasswordLastSet · more than 180 days old = Open</text>
+<rect x="1165" y="1365" width="94.89" height="26" rx="13" fill="#0a1124" stroke="#4ade80" stroke-width="1" stroke-opacity="0.5" />
+<text x="1212.45" y="1381.96" fill="#cbd5e1" font-size="11" text-anchor="middle">2025: V-278176</text>
+<rect x="1267.89" y="1365" width="94.89" height="26" rx="13" fill="#0a1124" stroke="#4ade80" stroke-width="1" stroke-opacity="0.5" />
+<text x="1315.34" y="1381.96" fill="#cbd5e1" font-size="11" text-anchor="middle">2019: V-205877</text>
+<rect x="1370.78" y="1365" width="94.89" height="26" rx="13" fill="#0a1124" stroke="#4ade80" stroke-width="1" stroke-opacity="0.5" />
+<text x="1418.23" y="1381.96" fill="#cbd5e1" font-size="11" text-anchor="middle">2016: V-225006</text>
+<g transform="translate(110,1421)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#fbbf24" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#fbbf24" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#fbbf24" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><circle cx='17' cy='17' r='15'/><path d='M17 8 V17 L23 21'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Check</text>
+<text x="46" y="46" fill="#fdd97c" font-size="8.5" letter-spacing="0.6">-MODE CHECK · READ-ONLY</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">PasswordLastSet age vs 180 days: Open / NotAFinding</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">Replication, reachability, policy, next action</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">Exit 1 when Open: a scheduled task can alert</text>
+<rect x="154.83" y="126" width="57.9" height="20" rx="10" fill="#0a1124" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.5" />
+<text x="183.78" y="139.42" fill="#fddc87" font-size="9.5" text-anchor="middle">read-only</text>
+<rect x="216.73" y="126" width="77" height="20" rx="10" fill="#0a1124" stroke="#fbbf24" stroke-width="1" stroke-opacity="0.5" />
+<text x="255.23" y="139.42" fill="#fddc87" font-size="9.5" text-anchor="middle">STIG evidence</text>
+</g>
+<g transform="translate(575.67,1421)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#22d3ee" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#22d3ee" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#22d3ee" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><path d='M2 16 V2 H16 L32 18 L18 32 Z'/><circle cx='9' cy='9' r='2.5'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Reset 1 of 2</text>
+<text x="46" y="46" fill="#7ae5f5" font-size="8.5" letter-spacing="0.6">-MODE RESET · ASKS Y/N</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">Resets on the PDC, replicates, verifies every DC</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">PasswordLastSet is fresh: the item is NotAFinding</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">State file: step 1 · unicodePwd version N+1</text>
+<rect x="178.83" y="126" width="33.87" height="20" rx="10" fill="#0a1124" stroke="#22d3ee" stroke-width="1" stroke-opacity="0.5" />
+<text x="195.77" y="139.42" fill="#85e7f6" font-size="9.5" text-anchor="middle">Y/N</text>
+<rect x="216.7" y="126" width="53.34" height="20" rx="10" fill="#0a1124" stroke="#22d3ee" stroke-width="1" stroke-opacity="0.5" />
+<text x="243.37" y="139.42" fill="#85e7f6" font-size="9.5" text-anchor="middle">no undo</text>
+</g>
+<g transform="translate(1041.33,1421)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#b660ff" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#b660ff" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#b660ff" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><circle cx='17' cy='17' r='15'/><path d='M17 8 V17 L23 21'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Wait</text>
+<text x="46" y="46" fill="#d3a0ff" font-size="8.5" letter-spacing="0.6">&gt;= MAXTICKETAGE (10 H BY DEFAULT)</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">Reset 2 is refused before the wait (STOP: too soon)</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">Tickets sealed with key N-1 keep working meanwhile</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">Finish within -PairWindowDays (7) of reset 1</text>
+<rect x="180.33" y="126" width="88.3" height="20" rx="10" fill="#0a1124" stroke="#b660ff" stroke-width="1" stroke-opacity="0.5" />
+<text x="224.48" y="139.42" fill="#d7a8ff" font-size="9.5" text-anchor="middle">STOP if too soon</text>
+</g>
+<g transform="translate(110,1596)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#4ade80" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#4ade80" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#4ade80" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><rect x='5' y='4' width='24' height='29' rx='3'/><rect x='12' y='1' width='10' height='6' rx='2'/><path d='M11 19 L15 23 L23 14'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Reset 2 of 2</text>
+<text x="46" y="46" fill="#92ebb3" font-size="8.5" letter-spacing="0.6">-MODE RESET AGAIN</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">Password history now holds only the two new keys</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">Golden tickets forged with the old key stop working</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">State file: step 2 · pair complete · due again in 180 d</text>
+<rect x="147.33" y="126" width="70.73" height="20" rx="10" fill="#0a1124" stroke="#4ade80" stroke-width="1" stroke-opacity="0.5" />
+<text x="182.7" y="139.42" fill="#9bedb9" font-size="9.5" text-anchor="middle">NotAFinding</text>
+<rect x="222.06" y="126" width="79.09" height="20" rx="10" fill="#0a1124" stroke="#4ade80" stroke-width="1" stroke-opacity="0.5" />
+<text x="261.6" y="139.42" fill="#9bedb9" font-size="9.5" text-anchor="middle">history cleared</text>
+</g>
+<g transform="translate(575.67,1596)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#fb7185" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#fb7185" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#fb7185" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><path d='M17 1 L32 7 V19 C32 27 25 32 17 33 C9 32 2 27 2 19 V7 Z'/><path d='M10 17 L15 22 L24 12'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Compromise</text>
+<text x="46" y="46" fill="#fdaab6" font-size="8.5" letter-spacing="0.6">-MODE RESET -IMMEDIATE</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">Both resets in one run, replication verified between</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">Every ticket invalid: users and services re-authenticate</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">Use only when the krbtgt key may be stolen</text>
+<rect x="130.33" y="126" width="91.72" height="20" rx="10" fill="#0a1124" stroke="#fb7185" stroke-width="1" stroke-opacity="0.5" />
+<text x="176.19" y="139.42" fill="#fdb1bc" font-size="9.5" text-anchor="middle">incident response</text>
+<rect x="226.05" y="126" width="92.58" height="20" rx="10" fill="#0a1124" stroke="#fb7185" stroke-width="1" stroke-opacity="0.5" />
+<text x="272.34" y="139.42" fill="#fdb1bc" font-size="9.5" text-anchor="middle">CRITICAL warning</text>
+</g>
+<g transform="translate(1041.33,1596)">
+<rect x="0" y="0" width="448.67" height="158" rx="12" fill="#0d1426" stroke="#3b82f6" stroke-width="1.4" />
+<rect x="0" y="0" width="448.67" height="5" rx="2.5" fill="#3b82f6" filter="url(#softGlow)"/>
+<g transform="translate(14,16) scale(0.65)" fill="none" stroke="#3b82f6" stroke-width="2.77" stroke-linecap="round" stroke-linejoin="round"><circle cx='6' cy='17' r='4'/><circle cx='28' cy='17' r='4'/><path d='M10 17 H22 M18 13 L22 17 L18 21'/></g>
+<text x="46" y="30" fill="#e8eef7" font-size="14" font-weight="700">Schedule</text>
+<text x="46" y="46" fill="#89b4fa" font-size="8.5" letter-spacing="0.6">STAY NOTAFINDING</text>
+<text x="14" y="72" fill="#cbd5e1" font-size="10.5">Run Check weekly (exit 1 = Open) and keep the CSV</text>
+<text x="14" y="90" fill="#cbd5e1" font-size="10.5">Run the pair every 90-180 days, before the due date</text>
+<text x="14" y="108" fill="#cbd5e1" font-size="10.5">RODC krbtgt_&lt;id&gt; accounts: separate procedure</text>
+<rect x="173.83" y="126" width="100.75" height="20" rx="10" fill="#0a1124" stroke="#3b82f6" stroke-width="1" stroke-opacity="0.5" />
+<text x="224.21" y="139.42" fill="#93bafa" font-size="9.5" text-anchor="middle">every 180 d at most</text>
+</g>
+<text x="60" y="1804" fill="#94a3b8" font-size="11" letter-spacing="2">LEGEND</text>
+<rect x="60" y="1816" width="14" height="14" rx="3" fill="#fb923c" />
+<text x="82" y="1827" fill="#cbd5e1" font-size="12">Management computer</text>
+<rect x="246.8" y="1816" width="14" height="14" rx="3" fill="#b660ff" />
+<text x="268.8" y="1827" fill="#cbd5e1" font-size="12">PDC emulator · DCs</text>
+<rect x="412.48" y="1816" width="14" height="14" rx="3" fill="#00d4ff" />
+<text x="434.48" y="1827" fill="#cbd5e1" font-size="12">Kerberos clients · services</text>
+<circle cx="615.52" cy="1823" r="5" fill="#fbbf24" />
+<text x="630.52" y="1827" fill="#cbd5e1" font-size="12">Check · wait · warnings</text>
+<circle cx="797.4" cy="1823" r="5" fill="#4ade80" />
+<text x="812.4" y="1827" fill="#cbd5e1" font-size="12">Reset done · NotAFinding</text>
+<circle cx="994.28" cy="1823" r="5" fill="#fb7185" />
+<text x="1009.28" y="1827" fill="#cbd5e1" font-size="12">Compromise · no undo</text>
+<circle cx="1177.84" cy="1823" r="5" fill="#00d4ff" />
+<text x="1192.84" y="1827" fill="#cbd5e1" font-size="12">Reset flow (down)</text>
+<circle cx="1334.16" cy="1823" r="5" fill="#b660ff" />
+<text x="1349.16" y="1827" fill="#cbd5e1" font-size="12">Evidence (up)</text>
+<text x="1550" y="1864" fill="#475569" font-size="10" letter-spacing="1.5" text-anchor="end">DC-KRBTGT-RESET · krbtgt password reset for DISA STIG V-254427 / WN22-DC-000430 · 2026</text>
+</svg>

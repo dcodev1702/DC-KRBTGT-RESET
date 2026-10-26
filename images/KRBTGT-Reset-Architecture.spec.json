@@ -1,0 +1,80 @@
+{
+  "width": 1600,
+  "title": "KRBTGT PASSWORD RESET ON DOMAIN CONTROLLERS",
+  "subtitle": ["DISA STIG V-254427 · WN22-DC-000430", "TWO RESETS PER CYCLE", "WAIT >= TICKET LIFETIME", "POWERSHELL 7 (5.1 OK)", "AD MODULE ONLY"],
+  "description": "A management computer (or a domain controller) runs Reset-KrbtgtPassword.ps1. The read-only pre-flight reads the domain, the PDC emulator, every writable DC, the krbtgt account and its unicodePwd replication version, the Kerberos policy from SYSVOL and the replication health. A reset is performed on the PDC emulator, replicated with Sync-ADObject to every writable DC and verified there. The Kerberos clients and services keep working after reset 1 because the password history holds two keys; after reset 2 every ticket issued before reset 1 is rejected. The lower panel shows the two-reset cycle, the compromise mode and the STIG outcome for V-254427 / WN22-DC-000430 and its Server 2025, 2019 and 2016 equivalents.",
+  "badge": { "text": "Windows Server 2022 STIG V2R11 · 30 Sep 2026 · CAT II", "color": "green" },
+  "container": { "label": "Active Directory domain", "color": "violet", "note": "the management computer or a DC runs the script · the PDC emulator takes the reset · every writable DC is verified" },
+  "cards": [
+    {
+      "accent": "orange", "icon": "terminal", "title": "MANAGEMENT COMPUTER", "subtitle": "PAW / jump host or a DC · runs the script",
+      "sections": [
+        { "label": "Role", "text": "Runs Reset-KrbtgtPassword.ps1 with the ActiveDirectory module over LDAP; no agent, no download, no other tool" },
+        { "label": "Pre-flight · read-only", "dot": "amber", "bullets": ["PowerShell 7 or 5.1 · ActiveDirectory module", "Domain, PDC emulator, writable DCs, RODCs", "krbtgt by SID (RID 502) · PasswordLastSet", "unicodePwd replication version + originating DC", "Kerberos policy from SYSVOL GptTmpl.inf", "Replication failures + partner results", "LDAP bind to every writable DC"] },
+        { "label": "Decides", "dot": "cyan", "bullets": ["Reset 1 of 2 or 2 of 2 (state file + AD version)", "STOP if < ticket lifetime since the last reset", { "text": "Changes ask Y/N · -NoConfirm · -WhatIf", "dot": "amber" }] },
+        { "label": "Output", "lines": ["`Logs\\Reset-KrbtgtPassword-<mode>-<stamp>.log + .csv`", "`Outputs\\<domain>\\krbtgt-state.json`", "one JSON record per reset · exit 1 on Open / STOP"] }
+      ],
+      "callout": { "kind": "Important", "title": "no secret is ever written", "text": "The new password is 64 random characters from a cryptographic RNG, built as a read-only SecureString, never shown, logged or hashed." },
+      "footer": "PS 7 OR 5.1 · RSAT AD · DOMAIN ADMIN · LDAP"
+    },
+    {
+      "accent": "violet", "tint": true, "icon": "server", "title": "PDC EMULATOR", "subtitle": "takes the reset · replicates to all writable DCs",
+      "sections": [
+        { "label": "Role", "text": "Set-ADAccountPassword -Reset on CN=krbtgt, then Sync-ADObject to every other writable DC and verification on each one" },
+        { "label": "Reset", "dot": "green", "bullets": ["unicodePwd version N -> N+1", "PasswordLastSet = now (the STIG check value)", "Verified on the PDC before anything else"] },
+        { "label": "Replicate · verify", "dot": "cyan", "bullets": ["Sync-ADObject PDC -> each writable DC", "Poll every DC until it shows version N+1", "Up to -ReplicationTimeoutMinutes (15)", "Not confirmed = FAIL, next reset refused"] },
+        { "label": "Password history = 2", "dot": "violet", "bullets": ["After reset 1: old key still accepted (N-1)", "After reset 2: the pre-reset key is gone", "That is why the STIG wants two resets"] }
+      ],
+      "callout": { "kind": "Critical", "title": "no undo", "text": "The old key cannot be restored. If something breaks, clients recover by re-authenticating; Microsoft: a reboot is the only reliable recovery." },
+      "footer": "WRITABLE DCs ONLY · RODC krbtgt_* NOT TOUCHED"
+    },
+    {
+      "accent": "cyan", "icon": "windows", "title": "KERBEROS CLIENTS + SERVICES", "subtitle": "every TGT is sealed with the krbtgt key",
+      "sections": [
+        { "label": "Role", "text": "Users, computers and services hold TGTs for up to MaxTicketAge (10 h) and service tickets for up to MaxServiceAge (600 min)" },
+        { "label": "After reset 1", "dot": "green", "bullets": ["KDCs accept tickets from key N and N-1", "Nobody notices; new TGTs use the new key"] },
+        { "label": "After reset 2 (>= 10 h later)", "dot": "amber", "bullets": ["Tickets issued before reset 1 are rejected", "Clients request new TGTs transparently", "Stuck sessions: sign out / reboot"] },
+        { "label": "-Immediate (compromise)", "dot": "rose", "bullets": ["Both resets in one run, no wait", "Every ticket in the domain is invalid at once", "Users, services and computers re-authenticate"] },
+        { "label": "Not affected", "dot": "green", "bullets": ["NTLM-authenticated connections", "Open sessions, until their service ticket renews"] }
+      ],
+      "callout": { "kind": "Tip", "title": "wait at least the ticket lifetime", "text": "The script derives the wait from the Kerberos policy (longest of MaxTicketAge and MaxServiceAge) and refuses reset 2 before it; -MinHoursBetweenResets can only raise it." },
+      "footer": "GOLDEN TICKET DEFENSE · CCI-000366"
+    }
+  ],
+  "connectors": ["pre-flight · reset (LDAP)", "Sync-ADObject · verify", "TGT · service tickets"],
+  "bar": {
+    "label": "Default Domain Policy · Kerberos policy", "color": "cyan",
+    "title": "MaxTicketAge 10 h · MaxServiceAge 600 min · MaxRenewAge 7 d (Windows defaults)",
+    "note": "Read from \\\\<domain>\\SYSVOL\\...\\{31B2F340-016D-11D2-945F-00C04FB984F9}\\MACHINE\\Microsoft\\Windows NT\\SecEdit\\GptTmpl.inf, or -KerberosPolicyPath · the minimum wait between reset 1 and reset 2 is the longest lifetime",
+    "right": "Reset-KrbtgtPassword.ps1 -Mode Check | Reset"
+  },
+  "corridor": {
+    "down": { "title": "Reset flow", "sub": "management computer → PDC → every writable DC", "color": "cyan", "chips": ["Set-ADAccountPassword -Reset", "Sync-ADObject"] },
+    "center": { "title": "LDAP", "sub": "AD module · Kerberos auth" },
+    "up": { "title": "Evidence", "sub": "read back from every DC, not from variables", "color": "violet", "chips": ["unicodePwd version", "PasswordLastSet"] }
+  },
+  "panel": {
+    "label": "Two-reset cycle + STIG outcome", "color": "blue", "note": "one reset per run, the wait in between · what each step proves",
+    "banner": { "icon": "shield", "color": "green", "title": "V-254427 / WN22-DC-000430 · CAT II · CCI-000366", "sub": "check: Get-ADUser krbtgt -Property PasswordLastSet · more than 180 days old = Open", "chips": ["2025: V-278176", "2019: V-205877", "2016: V-225006"] },
+    "columns": 3,
+    "cards": [
+      { "accent": "amber", "icon": "clock", "title": "Check", "subtitle": "-Mode Check · read-only", "lines": ["PasswordLastSet age vs 180 days: Open / NotAFinding", "Replication, reachability, policy, next action", "Exit 1 when Open: a scheduled task can alert"], "chips": ["read-only", "STIG evidence"] },
+      { "accent": "teal", "icon": "version", "title": "Reset 1 of 2", "subtitle": "-Mode Reset · asks Y/N", "lines": ["Resets on the PDC, replicates, verifies every DC", "PasswordLastSet is fresh: the item is NotAFinding", "State file: step 1 · unicodePwd version N+1"], "chips": ["Y/N", "no undo"] },
+      { "accent": "violet", "icon": "clock", "title": "Wait", "subtitle": ">= MaxTicketAge (10 h by default)", "lines": ["Reset 2 is refused before the wait (STOP: too soon)", "Tickets sealed with key N-1 keep working meanwhile", "Finish within -PairWindowDays (7) of reset 1"], "chips": ["STOP if too soon"] },
+      { "accent": "green", "icon": "check", "title": "Reset 2 of 2", "subtitle": "-Mode Reset again", "lines": ["Password history now holds only the two new keys", "Golden tickets forged with the old key stop working", "State file: step 2 · pair complete · due again in 180 d"], "chips": ["NotAFinding", "history cleared"] },
+      { "accent": "rose", "icon": "shield", "title": "Compromise", "subtitle": "-Mode Reset -Immediate", "lines": ["Both resets in one run, replication verified between", "Every ticket invalid: users and services re-authenticate", "Use only when the krbtgt key may be stolen"], "chips": ["incident response", "CRITICAL warning"] },
+      { "accent": "blue", "icon": "flow", "title": "Schedule", "subtitle": "stay NotAFinding", "lines": ["Run Check weekly (exit 1 = Open) and keep the CSV", "Run the pair every 90-180 days, before the due date", "RODC krbtgt_<id> accounts: separate procedure"], "chips": ["every 180 d at most"] }
+    ]
+  },
+  "legend": [
+    { "label": "Management computer", "color": "orange" },
+    { "label": "PDC emulator · DCs", "color": "violet" },
+    { "label": "Kerberos clients · services", "color": "cyan" },
+    { "label": "Check · wait · warnings", "color": "amber", "shape": "dot" },
+    { "label": "Reset done · NotAFinding", "color": "green", "shape": "dot" },
+    { "label": "Compromise · no undo", "color": "rose", "shape": "dot" },
+    { "label": "Reset flow (down)", "color": "cyan", "shape": "dot" },
+    { "label": "Evidence (up)", "color": "violet", "shape": "dot" }
+  ],
+  "footer": "DC-KRBTGT-RESET · krbtgt password reset for DISA STIG V-254427 / WN22-DC-000430 · 2026"
+}

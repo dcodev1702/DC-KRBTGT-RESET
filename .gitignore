@@ -1,0 +1,3 @@
+# Run artifacts stay on the management computer (environment-specific: domain names, DC names, transcripts, state)
+/Logs/
+/Outputs/
