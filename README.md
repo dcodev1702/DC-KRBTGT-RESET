@@ -292,7 +292,14 @@ $Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit
 Register-ScheduledTask -TaskName 'KRBTGT-Reset-Pair' -Action $Action -Trigger $Trigger1, $Trigger2 -Principal $Principal -Settings $Settings -Description "krbtgt reset pair: reset 1 $T1, reset 2 $T2"
 ```
 
-Follow it from anywhere: `Get-ScheduledTaskInfo -TaskName KRBTGT-Reset-Pair` (LastRunTime, LastTaskResult 0, NextRunTime), the CSV in `<Root>\Logs`, and `<Root>\Outputs\<domain>\krbtgt-state.json` (`"Step": 1` after the first run, `"Step": 2` after the second). A management computer can read the same state with `-Mode Check -OutputPath \\<dc>\C$\Admin\DC-KRBTGT-RESET\Outputs`. The DC's clock decides the trigger times; if the DC and your workstation are in different time zones, compute them on the DC as above.
+Follow it from the management computer (lab values; replace the DC, domain and folder with yours):
+
+```powershell
+Invoke-Command DC25-1 { Get-ScheduledTaskInfo KRBTGT-Reset-Pair }
+.\scripts\Reset-KrbtgtPassword.ps1 -Mode Check -OutputPath '\\DC25-1.skynet-home.local\C$\Admin\DC-KRBTGT-RESET\Outputs'
+```
+
+The first shows `LastRunTime`, `LastTaskResult` (0 = the script passed) and `NextRunTime` (reset 2). The second reads the **DC's** state file over the admin share, so the pair logic is trusted (`the state file records reset 1 of 2 ...`) and the earliest time for reset 2 is printed. The DC's clock decides the trigger times; if the DC and your workstation are in different time zones, compute them on the DC as above. Confirming replication by hand (`repadmin /showobjmeta`, per-DC `unicodePwd` version) is in [`docs/STEP-BY-STEP.md`](docs/STEP-BY-STEP.md), section 4.
 
 ---
 
