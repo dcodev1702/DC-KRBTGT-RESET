@@ -6,7 +6,7 @@
 > STIG item: **V-254427 / WN22-DC-000430 / SV-254427r991589_rule (CAT II, CCI-000366)** — *The password for the krbtgt account on a domain must be reset at least every 180 days.* Microsoft Windows Server 2022 STIG **V2R11, benchmark date 30 Sep 2026**, taken from [DISA's STIG library](https://public.cyber.mil/stigs/downloads/). The same rule exists for Server **2025 (V-278176)**, **2019 (V-205877)** and **2016 (V-225006)**; the script reports the one that matches each domain controller's OS. Full text: [`docs/STIG-V-254427.md`](docs/STIG-V-254427.md).
 
 > [!IMPORTANT]
-> **Verified on 2026-10-26** against a Windows Server 2025 domain controller (single-DC lab): `-Mode Check` found the item **Open** (PasswordLastSet 213 days old) and exited 1; `-Mode Reset -WhatIf` and a non-interactive `-Mode Reset` without `-NoConfirm` both **stopped before changing anything** (krbtgt still at unicodePwd version 2 afterwards); both PowerShell 7.6.9 and 5.1. The reset path itself (Set-ADAccountPassword, Sync-ADObject, verification, state file, `-Immediate`, every STOP) is proven by **121 tests against a mocked Active Directory** ([`tests/`](tests/Test-KrbtgtReset.ps1)), in both editions. See [Appendix A](#appendix-a--lab-verification-2026-10-26). **A krbtgt reset has no undo** — read [section 9](#9-what-happens-to-kerberos-tickets) before the first real run.
+> **Verified live on 2026-10-26** on a Windows Server 2025 domain controller (single-DC lab), PowerShell 7 and 5.1: `-Mode Check` found the item **Open** (PasswordLastSet 213 days old, exit 1); `-Mode Reset -WhatIf` and a non-interactive run without `-NoConfirm` **stopped before changing anything**; then **reset 1 of 2 was performed by a scheduled task running as SYSTEM on the DC** (unicodePwd version 2 → 3, replication confirmed, state file written, Security events 4724/4738), and a run a minute later was **refused as too soon**. Reset 2 of 2 is scheduled by the same task 10 h 30 min after reset 1. The reset path is also proven by **121 tests against a mocked Active Directory** ([`tests/`](tests/Test-KrbtgtReset.ps1)). See [Appendix A](#appendix-a--lab-verification-2026-10-26). **A krbtgt reset has no undo** — read [section 9](#9-what-happens-to-kerberos-tickets) before the first real run.
 
 ---
 
@@ -237,6 +237,8 @@ From Microsoft's documentation of the KRBTGT account ([Active Directory accounts
 
 **Nothing secret is ever written.** The password is generated with `System.Security.Cryptography.RandomNumberGenerator` directly into a read-only `SecureString` (64 characters, all four classes), handed to `Set-ADAccountPassword` and disposed. It never exists as a string, is never printed, logged or hashed. The tests assert that no 64-character token appears in any transcript.
 
+**On the DC itself** the Security log records the reset: event **4724** (an attempt was made to reset an account's password) and **4738** (a user account was changed) for `krbtgt`, with the resetting principal as the subject. In the lab no `Kerberos-Key-Distribution-Center` event was written for the reset, so use 4724/4738 plus the `unicodePwd` version from `repadmin /showobjmeta` as the DC-side evidence.
+
 Result rows in Check mode on a non-compliant domain (lab, 2026-10-26):
 
 ```
@@ -273,6 +275,24 @@ pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\DC-KRBTGT-R
 ```
 
 A reasonable cadence: run the pair every **90 days** (well inside the 180-day limit, and the item never gets close to Open).
+
+### The pair as a scheduled task on a domain controller (as SYSTEM) — the pattern used in the lab
+
+A task on a DC that runs as **SYSTEM** needs no stored credential (LocalSystem on a DC may write the directory), the DC is always on, `-StartWhenAvailable` runs a missed trigger after a reboot, and the script's own guard refuses reset 2 before the ticket lifetime has passed no matter when the trigger fires. The task below (tested on Windows Server 2025 with PowerShell 7.6.8) performs reset 1 two minutes after registration and reset 2 ten and a half hours later, then deletes itself. Copy `scripts\` to a folder on the DC first (under an AppLocker-allowed path such as `C:\Admin` if your DCs enforce AppLocker) and compare the file hashes.
+
+```powershell
+$Root = 'C:\Admin\DC-KRBTGT-RESET'          # on the DC
+$Pwsh = (Get-Command pwsh.exe).Source       # or "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+$T1 = (Get-Date).AddMinutes(2); $T2 = $T1.AddHours(10).AddMinutes(30); $End = $T2.AddDays(3)
+$Trigger1 = New-ScheduledTaskTrigger -Once -At $T1; $Trigger1.EndBoundary = $End.ToString('yyyy-MM-ddTHH:mm:ss')
+$Trigger2 = New-ScheduledTaskTrigger -Once -At $T2; $Trigger2.EndBoundary = $End.ToString('yyyy-MM-ddTHH:mm:ss')
+$Action = New-ScheduledTaskAction -Execute $Pwsh -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Root\scripts\Reset-KrbtgtPassword.ps1`" -Mode Reset -NoConfirm" -WorkingDirectory "$Root\scripts"
+$Principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+$Settings = New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -DeleteExpiredTaskAfter (New-TimeSpan -Hours 1)
+Register-ScheduledTask -TaskName 'KRBTGT-Reset-Pair' -Action $Action -Trigger $Trigger1, $Trigger2 -Principal $Principal -Settings $Settings -Description "krbtgt reset pair: reset 1 $T1, reset 2 $T2"
+```
+
+Follow it from anywhere: `Get-ScheduledTaskInfo -TaskName KRBTGT-Reset-Pair` (LastRunTime, LastTaskResult 0, NextRunTime), the CSV in `<Root>\Logs`, and `<Root>\Outputs\<domain>\krbtgt-state.json` (`"Step": 1` after the first run, `"Step": 2` after the second). A management computer can read the same state with `-Mode Check -OutputPath \\<dc>\C$\Admin\DC-KRBTGT-RESET\Outputs`. The DC's clock decides the trigger times; if the DC and your workstation are in different time zones, compute them on the DC as above.
 
 ---
 
@@ -347,13 +367,17 @@ No domain, no network, nothing outside a temporary folder. **121 tests** in each
 | Management computer | Windows 11 Enterprise, PowerShell 7.6.9 and Windows PowerShell 5.1, ActiveDirectory module 1.0.1.0 (loads natively in 7) |
 | krbtgt before | `PasswordLastSet 2026-03-27 01:12:51`, `unicodePwd` version 2 (domain creation) — **213 days: V-254427 Open** |
 | Kerberos policy read from SYSVOL | MaxTicketAge 10 h, MaxServiceAge 600 min, MaxRenewAge 7 d, MaxClockSkew 5 min → minimum wait 10 h |
-| `-Mode Check` (7 and 5.1) | FAIL row `STIG V-254427 ... Open`, applicable item V-278176 / WN25-DC-000430, hint "reset 1 of 2", **exit 1** |
+| `-Mode Check` (7 and 5.1, from the PAW) | FAIL row `STIG V-254427 ... Open`, applicable item V-278176 / WN25-DC-000430, hint "reset 1 of 2", **exit 1** |
 | `-Mode Reset -WhatIf` (7) | plan printed, `Reset 1 of 2: WhatIf - not performed, nothing was changed`, transcript closed, exit 0 |
 | `-Mode Reset` non-interactive, no `-NoConfirm` (7) | plan printed, `STOP: this change needs a Y/N confirmation ... Nothing was changed`, exit 1 |
-| krbtgt after those runs | `PasswordLastSet 2026-03-27`, version **2** — unchanged; no `Outputs\` folder created |
+| krbtgt after those runs | `PasswordLastSet 2026-03-27`, version **2** — unchanged |
 | Tests | `ALL 121 TESTS PASSED` in PowerShell 7.6.9 and in Windows PowerShell 5.1 |
-
-The live reset pair has not been run in this lab yet; when it is, this appendix will carry the before/after versions and the two transcripts.
+| Scripts staged on the DC | `C:\Admin\DC-KRBTGT-RESET\scripts\` (AppLocker Enforce on the DC; `C:\Admin` is an allowed path), SHA-256 of all three files identical to the repository |
+| `-Mode Check` as **SYSTEM** on the DC (temporary scheduled task, pwsh 7.6.8) | identical result to the PAW run: every pre-flight OK, item Open, exit 1 — proves the SYSTEM context can read AD, replication metadata and SYSVOL |
+| **Reset 1 of 2** — task `KRBTGT-Reset-Pair` as SYSTEM, `-Mode Reset -NoConfirm`, 2026-10-26 02:11:08 DC local (09:11 UTC) | `Reset 1 of 2: done on DC25-1 - PasswordLastSet 2026-10-26 02:11:08 - unicodePwd version 2 -> 3` · `Replication: version 3 confirmed on all 1 writable DC(s)` · `STIG V-254427 after: NotAFinding` · task result 0 · state `Step 1, UnicodePwdVersion 3` · Security log 4724 + 4738 for krbtgt by `DC25-1$` · verified from the PAW: version 3, `PasswordLastSet 10:11:08` (+01:00) |
+| `-Mode Check` from the PAW with `-OutputPath \\DC25-1\C$\...\Outputs` | `the state file records reset 1 of 2 ... this run is reset 2 of 2` · `reset 2 of 2 pending - earliest 2026-10-26 20:11:08` · NotAFinding, exit 0 |
+| `-Mode Reset -WhatIf` one minute after reset 1 | `STOP: too soon - the krbtgt password was set 0.01 h ago ... Run again after 2026-10-26 20:11:08 ... Nothing was changed`, exit 1 |
+| **Reset 2 of 2** | scheduled by the same task for 2026-10-26 12:41:06 DC local (19:41 UTC), `-StartWhenAvailable`; expected: version 3 → 4, state `Step 2`, pair complete, NotAFinding until 2027-04-24. This row will be updated with the result. |
 
 ---
 

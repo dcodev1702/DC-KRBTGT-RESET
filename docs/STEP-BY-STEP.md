@@ -207,6 +207,21 @@ pwsh.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File C:\DC-KRBTGT-R
 
 Suggested cadence: a pair every 90 days.
 
+**On a domain controller as SYSTEM (no stored credential, survives reboots).** Copy `scripts\` to the DC (e.g. `C:\Admin\DC-KRBTGT-RESET\scripts`, an AppLocker-allowed path if your DCs enforce AppLocker), compare the hashes, then register one task with two one-time triggers on the DC — this is what the lab run used (README section 11 has the full snippet):
+
+```powershell
+$Root = 'C:\Admin\DC-KRBTGT-RESET'; $Pwsh = (Get-Command pwsh.exe).Source
+$T1 = (Get-Date).AddMinutes(2); $T2 = $T1.AddHours(10).AddMinutes(30); $End = $T2.AddDays(3)
+$Trigger1 = New-ScheduledTaskTrigger -Once -At $T1; $Trigger1.EndBoundary = $End.ToString('yyyy-MM-ddTHH:mm:ss')
+$Trigger2 = New-ScheduledTaskTrigger -Once -At $T2; $Trigger2.EndBoundary = $End.ToString('yyyy-MM-ddTHH:mm:ss')
+Register-ScheduledTask -TaskName 'KRBTGT-Reset-Pair' -Trigger $Trigger1, $Trigger2 `
+  -Action (New-ScheduledTaskAction -Execute $Pwsh -Argument "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$Root\scripts\Reset-KrbtgtPassword.ps1`" -Mode Reset -NoConfirm" -WorkingDirectory "$Root\scripts") `
+  -Principal (New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest) `
+  -Settings (New-ScheduledTaskSettingsSet -StartWhenAvailable -ExecutionTimeLimit (New-TimeSpan -Hours 1) -MultipleInstances IgnoreNew -DeleteExpiredTaskAfter (New-TimeSpan -Hours 1))
+```
+
+Three things keep the time even if something reboots: the task store holds the second trigger (`-StartWhenAvailable` runs it after a missed start), the state file on the DC records reset 1, and AD's own `PasswordLastSet` makes the script refuse an early reset 2 no matter what fires it. Check progress from any computer with `Get-ScheduledTaskInfo -TaskName KRBTGT-Reset-Pair` and `.\Reset-KrbtgtPassword.ps1 -Mode Check -OutputPath \\<dc>\C$\Admin\DC-KRBTGT-RESET\Outputs`.
+
 ---
 
 ## 9. Checklists
